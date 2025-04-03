@@ -14,3 +14,5 @@ path = "cmd/main.rs"
 reqwest = { version = "0.12.15", features = ["json"] }
 tokio = { version = "1", features = ["rt", "macros", "sync"] }
 async-trait = { version = "0.1.73" }
+serde = { version = "1.0.219", features = ["derive"] }
+serde_yaml = { version = "0.9.34" }

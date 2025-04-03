@@ -3,15 +3,17 @@ use async_trait::async_trait;
 use crate::error::{Error, Result};
 use crate::wrapper::http;
 
-use super::{Fetcher, Record};
+use super::Fetcher;
+use crate::record::{Record, RecordSet};
 
+#[derive(Debug, Clone, Default)]
 pub struct HttpFetcher;
 
 impl HttpFetcher {
-    pub async fn fetch(&self) -> Result<Vec<Record>> {
-        let mut ret = Vec::new();
+    pub async fn fetch(&self) -> Result<RecordSet> {
+        let mut ret = RecordSet::default();
 
-        ret.push(CloudflareFetcher::fetch_v4().await?);
+        ret.records.push(CloudflareFetcher::fetch_v4().await?);
 
         Ok(ret)
     }
@@ -19,7 +21,7 @@ impl HttpFetcher {
 
 #[async_trait]
 impl Fetcher for HttpFetcher {
-    async fn fetch(&self) -> Result<Vec<Record>> {
+    async fn fetch(&self) -> Result<RecordSet> {
         self.fetch().await
     }
 }
