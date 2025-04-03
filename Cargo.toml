@@ -1,0 +1,15 @@
+[package]
+name = "dns-syncer"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Douglas Su <doug.su.au@gmail.com>"]
+readme = "README.md"
+
+[[bin]]
+name = "dns-syncer"
+path = "cmd/main.rs"
+
+
+[dependencies]
+
