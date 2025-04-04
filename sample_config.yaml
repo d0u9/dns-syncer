@@ -8,22 +8,24 @@ records:
     content: 8.8.8.8
     comment: 'DNS Syncer, google dns'
     op: create
-    labels:
-      - key: proxied
-        val: true
     backends:
       - provider: cloudflare-1
         zones:
           - example-au.org
 
+
   - type: A
     name: case2.dns-syncer-test
-    comment: test2 only
-    op: purge
+    content: 8.8.8.9
+    comment: 'A test address'
+    op: create
     backends:
-      - provider: cloudflare-1
+      - provider: "cloudflare-1"
+        params:
+          - name: "proxied"
+            value: "true"
         zones:
-          - example-au.org
+          - "example-au.org"
 
   - type: AAAA
     name: case1.dns-syncer-test
@@ -37,6 +39,8 @@ records:
       - provider: cloudflare-2
         zones:
           - example-us.org
+
+
 
 providers:
   - name: cloudflare-1

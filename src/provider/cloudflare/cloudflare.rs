@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::error::Result;
 use crate::provider::Provider;
-use crate::record::ConfigRecord;
 use crate::record::ProviderRecord;
 use crate::record::RecordContent;
 use crate::record::TTL;
