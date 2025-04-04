@@ -31,12 +31,6 @@ impl Response {
             Err(Error::HttpError(format!("status: {}", self.status)))
         }
     }
-
-    pub fn into_json(self) -> Result<serde_json::Value> {
-        let body = self.into_body()?;
-        let json: serde_json::Value = serde_json::from_str(&body)?;
-        Ok(json)
-    }
 }
 
 #[derive(Debug, Clone)]

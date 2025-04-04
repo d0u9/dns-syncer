@@ -106,9 +106,6 @@ pub enum RecordOp {
     #[serde(alias = "create")]
     Create, // create a new record if not exists, do nothing if exists
 
-    #[serde(alias = "delete")]
-    Delete, // delete the existing record if exists, do nothing if not exists
-
     #[serde(alias = "purge")]
     Purge, // Remove all records with the same name, and create new one.
 }
