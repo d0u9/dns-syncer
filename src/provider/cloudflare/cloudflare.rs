@@ -3,8 +3,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::Error;
 use crate::error::Result;
+use crate::provider::BackendRecords;
 use crate::provider::Provider;
 use crate::record::ProviderRecord;
+use crate::record::PublicIp;
 use crate::record::RecordContent;
 use crate::record::TTL;
 use crate::wrapper::http;
@@ -31,7 +33,7 @@ impl Cloudflare {
 
 #[async_trait]
 impl Provider for Cloudflare {
-    async fn sync(&self) -> Result<()> {
+    async fn sync(&self, records: BackendRecords, public_ip: PublicIp) -> Result<()> {
         Ok(())
     }
 }

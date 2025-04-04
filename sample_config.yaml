@@ -60,7 +60,5 @@ fetchers:
   - name: http_fetcher-1
     type: http_fetcher
     alive: 10
-    sources:
-      - name: cloudflare
 
 public_ip_fecher: http_fetcher-1

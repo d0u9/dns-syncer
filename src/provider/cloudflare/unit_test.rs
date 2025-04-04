@@ -1,11 +1,11 @@
 use std::net::Ipv4Addr;
 
+use super::cloudflare::*;
 use crate::record::ProviderParam;
 use crate::record::ProviderRecord;
 use crate::record::RecordContent;
+use crate::record::RecordOp;
 use crate::record::TTL;
-
-use super::cloudflare::*;
 
 #[tokio::test]
 async fn test_cf_record_op_purge() {
@@ -15,6 +15,7 @@ async fn test_cf_record_op_purge() {
         content: RecordContent::A(Ipv4Addr::new(1, 2, 3, 5)),
         comment: Some("unit test test_cf_record_op_create".to_string()),
         ttl: TTL::Value(3600),
+        op: RecordOp::Create,
         params: vec![ProviderParam {
             name: "proxied".to_string(),
             value: "true".to_string(),
@@ -33,6 +34,7 @@ async fn test_cf_record_op_create() {
         content: RecordContent::A(Ipv4Addr::new(1, 2, 3, 5)),
         comment: Some("unit test test_cf_record_op_create".to_string()),
         ttl: TTL::Auto,
+        op: RecordOp::Create,
         params: vec![ProviderParam {
             name: "proxied".to_string(),
             value: "true".to_string(),
