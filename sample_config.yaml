@@ -9,7 +9,7 @@ records:
     comment: 'DNS Syncer, google dns'
     op: create
     labels:
-      - key: proxy
+      - key: proxied
         val: true
     backends:
       - provider: cloudflare-1

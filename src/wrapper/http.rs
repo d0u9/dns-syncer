@@ -39,6 +39,7 @@ impl Response {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Header {
     key: HeaderKey,
     value: String,
@@ -52,6 +53,7 @@ impl Header {
 
 pub struct Client {
     cli: reqwest::Client,
+    dft_headers: Vec<Header>,
 }
 
 impl Default for Client {
@@ -64,18 +66,19 @@ impl Client {
     pub fn new() -> Self {
         Self {
             cli: reqwest::Client::new(),
+            dft_headers: vec![],
         }
+    }
+
+    pub fn set_default_headers(&mut self, headers: Vec<Header>) {
+        self.dft_headers = headers;
     }
 
     pub async fn get(&self, url: &str, headers: Option<Vec<Header>>) -> Result<Response> {
         let mut builder = self.cli.get(url);
-        if let Some(headers) = headers {
-            for header in headers {
-                builder = builder.header(header.key.as_str(), header.value.as_str());
-            }
-        }
-        let response = builder.send().await?;
+        builder = self.add_headers(builder, headers);
 
+        let response = builder.send().await?;
         Ok(Response {
             status: response.status().into(),
             body: response.text().await?,
@@ -89,17 +92,30 @@ impl Client {
         body: String,
     ) -> Result<Response> {
         let mut builder = self.cli.post(url);
-        if let Some(headers) = headers {
-            for header in headers {
-                builder = builder.header(header.key.as_str(), header.value.as_str());
-            }
-        }
-        let response = builder.body(body).send().await?;
+        builder = self.add_headers(builder, headers);
 
+        let response = builder.body(body).send().await?;
         Ok(Response {
             status: response.status().into(),
             body: response.text().await?,
         })
+    }
+
+    fn add_headers(
+        &self,
+        mut builder: reqwest::RequestBuilder,
+        headers: Option<Vec<Header>>,
+    ) -> reqwest::RequestBuilder {
+        let mut hdrs = self.dft_headers.clone();
+        if let Some(headers) = headers {
+            hdrs.extend(headers);
+        }
+
+        for header in hdrs {
+            builder = builder.header(header.key.as_str(), header.value.as_str());
+        }
+
+        builder
     }
 }
 

@@ -1,23 +1,9 @@
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum RecordValue {
-    A(Ipv4Addr),
-    AAAA(Ipv6Addr),
-    CNAME(String),
-    None,
-}
-
-impl Default for RecordValue {
-    fn default() -> Self {
-        Self::None
-    }
-}
+use serde::Deserialize;
 
 /// TTL value for a record
-#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum RecordTTL {
     Auto,
     Value(u32),
@@ -88,7 +74,7 @@ impl<'de> Deserialize<'de> for RecordTTL {
 }
 
 /// A record for an A record
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct RecordA {
     pub name: Option<String>,
 
@@ -100,7 +86,7 @@ pub struct RecordA {
 }
 
 /// A record for an AAAA record
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct RecordAAAA {
     pub name: Option<String>,
 
@@ -112,7 +98,7 @@ pub struct RecordAAAA {
 }
 
 /// A record for a CNAME record
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct RecordCNAME {
     pub name: Option<String>,
 
@@ -124,15 +110,15 @@ pub struct RecordCNAME {
 }
 
 /// DNS record
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(tag = "type")]
-pub enum Record {
+pub enum RecordEntry {
     A(RecordA),
     AAAA(RecordAAAA),
     CNAME(RecordCNAME),
 }
 
-impl Record {
+impl RecordEntry {
     pub fn new_v4_none_name(ip: Ipv4Addr) -> Self {
         Self::A(RecordA {
             name: None,
@@ -144,22 +130,22 @@ impl Record {
 
 /// A set of records
 #[derive(Debug, Clone, PartialEq)]
-pub struct RecordSet {
-    pub records: Vec<Record>,
+pub struct RecordEntrySet {
+    pub records: Vec<RecordEntry>,
 }
 
-impl Default for RecordSet {
+impl Default for RecordEntrySet {
     fn default() -> Self {
         Self { records: vec![] }
     }
 }
 
-impl RecordSet {
-    pub fn new(records: Vec<Record>) -> Self {
+impl RecordEntrySet {
+    pub fn new(records: Vec<RecordEntry>) -> Self {
         Self { records }
     }
 
-    pub fn push(&mut self, record: Record) {
+    pub fn push(&mut self, record: RecordEntry) {
         self.records.push(record);
     }
 
@@ -170,9 +156,9 @@ impl RecordSet {
     pub fn first_a(&self) -> Option<&RecordA> {
         self.records
             .iter()
-            .find(|r| matches!(r, Record::A(_)))
+            .find(|r| matches!(r, RecordEntry::A(_)))
             .map(|r| match r {
-                Record::A(record) => record,
+                RecordEntry::A(record) => record,
                 _ => panic!("record is not a A record"),
             })
     }
@@ -180,9 +166,9 @@ impl RecordSet {
     pub fn first_aaaa(&self) -> Option<&RecordAAAA> {
         self.records
             .iter()
-            .find(|r| matches!(r, Record::AAAA(_)))
+            .find(|r| matches!(r, RecordEntry::AAAA(_)))
             .map(|r| match r {
-                Record::AAAA(record) => record,
+                RecordEntry::AAAA(record) => record,
                 _ => panic!("record is not a AAAA record"),
             })
     }
@@ -190,76 +176,80 @@ impl RecordSet {
     pub fn first_cname(&self) -> Option<&RecordCNAME> {
         self.records
             .iter()
-            .find(|r| matches!(r, Record::CNAME(_)))
+            .find(|r| matches!(r, RecordEntry::CNAME(_)))
             .map(|r| match r {
-                Record::CNAME(record) => record,
+                RecordEntry::CNAME(record) => record,
                 _ => panic!("record is not a CNAME record"),
             })
     }
 }
 
 #[cfg(test)]
-mod test_deserialize {
+mod test {
     use super::*;
-    use serde_yaml;
 
-    #[test]
-    fn test_record() {
-        let yaml = r#"
+    mod test_deserialize {
+        use super::*;
+        use serde_yaml;
+
+        #[test]
+        fn test_record() {
+            let yaml = r#"
 type: A
 name: example.com
 value: 1.2.3.4
 ttl: auto
         "#;
 
-        let record: Record = serde_yaml::from_str(yaml).unwrap();
-        if let Record::A(record) = record {
+            let record: RecordEntry = serde_yaml::from_str(yaml).unwrap();
+            if let RecordEntry::A(record) = record {
+                assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
+                assert_eq!(record.ttl, RecordTTL::Auto);
+            } else {
+                panic!("record is not a A record");
+            }
+        }
+
+        #[test]
+        fn test_record_a_none_name() {
+            let yaml = r#"
+type: A
+value: 1.2.3.4
+ttl: auto
+        "#;
+
+            let record: RecordA = serde_yaml::from_str(yaml).unwrap();
             assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
             assert_eq!(record.ttl, RecordTTL::Auto);
-        } else {
-            panic!("record is not a A record");
+            assert_eq!(record.name, None);
         }
-    }
 
-    #[test]
-    fn test_record_a_none_name() {
-        let yaml = r#"
-type: A
-value: 1.2.3.4
-ttl: auto
-        "#;
-
-        let record: RecordA = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
-        assert_eq!(record.ttl, RecordTTL::Auto);
-        assert_eq!(record.name, None);
-    }
-
-    #[test]
-    fn test_record_a() {
-        let yaml = r#"
+        #[test]
+        fn test_record_a() {
+            let yaml = r#"
 type: A
 name: example.com
 value: 1.2.3.4
 ttl: auto
         "#;
 
-        let record: RecordA = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
-        assert_eq!(record.ttl, RecordTTL::Auto);
-    }
+            let record: RecordA = serde_yaml::from_str(yaml).unwrap();
+            assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
+            assert_eq!(record.ttl, RecordTTL::Auto);
+        }
 
-    #[test]
-    fn test_record_a_ttl_value() {
-        let yaml = r#"
+        #[test]
+        fn test_record_a_ttl_value() {
+            let yaml = r#"
 type: A
 name: example.com
 value: 1.2.3.4
 ttl: "3560"
         "#;
 
-        let record: RecordA = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
-        assert_eq!(record.ttl, RecordTTL::Value(3560));
+            let record: RecordA = serde_yaml::from_str(yaml).unwrap();
+            assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
+            assert_eq!(record.ttl, RecordTTL::Value(3560));
+        }
     }
 }
