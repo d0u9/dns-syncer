@@ -1,6 +1,5 @@
 use serde::{Serialize, ser::SerializeStruct};
 
-use crate::record::Record;
 use crate::record::RecordA;
 use crate::record::RecordAAAA;
 use crate::record::RecordCNAME;

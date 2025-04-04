@@ -200,7 +200,6 @@ mod test {
     mod test_deserialize {
         use super::*;
         use serde_yaml;
-        use tokio::sync::AcquireError;
 
         #[test]
         fn test_record() {
