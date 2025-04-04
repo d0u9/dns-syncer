@@ -1,27 +1,41 @@
 # The interval in seconds indicates how often this tool synchronizes with the remote.
 # 'check_interval == 0' means run this tool only once and then exit.
 check_interval: 30
+
+records:
+  - type: A
+    name: case1.dns-syncer-test
+    content: 8.8.8.8
+    comment: 'DNS Syncer, google dns'
+    op: create
+    labels:
+      - key: proxy
+        val: true
+    backends:
+      - provider: cloudflare-1
+        zone: example-au.org
+
+  - type: A
+    name: case2.dns-syncer-test
+    comment: test2 only
+    op: purge
+    backends:
+      - provider: cloudflare-1
+        zone: example-au.org
+
+  - type: AAAA
+    name: case1.dns-syncer-test
+    comment: test3 only
+    op: create
+    backends:
+      - provider: cloudflare-1
+        zone: example-au.org
+
 providers:
   - name: cloudflare-1
     type: cloudflare
     authentication:
       api_token: AABBCCDDEEFFGG
-    zones:
-      - id: "112233445566"
-        records:
-          - type: A
-            name: test1.example-au.org
-            proxied: true
-            content: 8.8.8.8
-            comment: 'DNS Syncer, google dns'
-            op: create
-          - type: A
-            proxied: false
-            name: test2.example-au.org
-            comment: test2 only
-            op: overwrite
-            # If "content" field is not specified, the default is to use the 
-            #public IP address obtained from 'https://1.1.1.1/cdn-cgi/trace' on Cloudflare.
 
 fetchers:
   - name: http_fetcher-1

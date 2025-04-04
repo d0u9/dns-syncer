@@ -40,7 +40,7 @@ impl CloudflareFetcher {
         }
 
         let ip = Self::parse_content_v4(&response.body).await?;
-        let record = Record::new_v4(ip.parse()?);
+        let record = Record::new_v4_none_name(ip.parse()?);
         Ok(record)
     }
 

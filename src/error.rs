@@ -8,6 +8,7 @@ pub enum Error {
     ParseError(String),
     IoError(std::io::Error),
     GlobalFetcherError(String),
+    NotImplemente,
 }
 
 impl std::error::Error for Error {}
@@ -19,6 +20,7 @@ impl fmt::Display for Error {
             Error::ParseError(e) => write!(f, "Parse error: {}", e),
             Error::IoError(e) => write!(f, "IO error: {}", e),
             Error::GlobalFetcherError(e) => write!(f, "Global fetcher error: {}", e),
+            Error::NotImplemente => write!(f, "Not implemented"),
         }
     }
 }
@@ -43,6 +45,12 @@ impl From<std::net::AddrParseError> for Error {
 
 impl From<serde_yaml::Error> for Error {
     fn from(err: serde_yaml::Error) -> Error {
+        Error::ParseError(err.to_string())
+    }
+}
+
+impl From<serde_json::Error> for Error {
+    fn from(err: serde_json::Error) -> Error {
         Error::ParseError(err.to_string())
     }
 }

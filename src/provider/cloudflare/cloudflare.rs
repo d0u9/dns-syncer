@@ -1,10 +1,10 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_yaml;
 use serde_yaml::Value as YamlValue;
 
 use crate::error::{Error, Result};
 use crate::fetcher::global;
-use crate::record::{RecordSet, RecordValue};
+use crate::record::{Record, RecordSet, RecordValue};
 
 use super::restful_cli::CfClient;
 
@@ -26,13 +26,12 @@ impl Default for CfRecordOp {
     }
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct CfRecord {
-    pub r#type: String,
-    pub name: String,
+    record: Record,
 
     #[serde(default)]
-    pub content: Option<String>,
+    pub id: Option<String>,
 
     #[serde(default)]
     pub proxied: bool,
@@ -41,24 +40,26 @@ pub(super) struct CfRecord {
     pub comment: String,
 
     #[serde(default)]
+    #[serde(skip_serializing)]
     pub op: CfRecordOp,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct CfAuth {
-    api_token: String,
+pub(super) struct CfAuthCfg {
+    api_token: Option<String>,
+    api_key: Option<CfApiKey>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct CfZone {
-    id: String,
+struct CfZoneCfg {
+    name: String,
     records: Vec<CfRecord>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CloudflareCfg {
-    authentication: CfAuth,
-    zones: Vec<CfZone>,
+    authentication: CfAuthCfg,
+    zones: Vec<CfZoneCfg>,
 }
 
 impl TryFrom<YamlValue> for CloudflareCfg {
@@ -70,14 +71,49 @@ impl TryFrom<YamlValue> for CloudflareCfg {
     }
 }
 
+/// The implementation of the Cloudflare
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct CfZone {
+    pub id: String,
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(super) struct CfApiKey {
+    pub email: String,
+    pub key: String,
+}
+
+#[derive(Debug, Clone)]
+pub(super) enum Auth {
+    ApiToken(String),
+    ApiKey(CfApiKey),
+}
+
+impl TryFrom<CfAuthCfg> for Auth {
+    type Error = Error;
+
+    fn try_from(cfg: CfAuthCfg) -> std::result::Result<Self, Self::Error> {
+        if let Some(api_token) = cfg.api_token {
+            Ok(Self::ApiToken(api_token))
+        } else if let Some(api_key) = cfg.api_key {
+            Ok(Self::ApiKey(api_key))
+        } else {
+            Err(Error::ParseError(
+                "No authentication method provided".to_string(),
+            ))
+        }
+    }
+}
+
 pub struct Cloudflare {
-    auth: CfAuth,
-    zones: Vec<CfZone>,
+    auth: Auth,
+    zones: Vec<CfZoneCfg>,
 }
 
 impl Cloudflare {
     pub fn from_cfg(cfg: CloudflareCfg) -> Result<Self> {
-        let auth = cfg.authentication;
+        let auth = Auth::try_from(cfg.authentication)?;
         let zones = cfg.zones;
         Ok(Self { auth, zones })
     }
@@ -85,7 +121,7 @@ impl Cloudflare {
     pub async fn sync(&self) -> Result<()> {
         let public_ip = global::fetch().await?;
 
-        let cli = CfClient::new(self.auth.api_token.clone());
+        let cli = CfClient::new(self.auth.clone());
 
         for zone in &self.zones {
             Self::sync_zone(&cli, zone, &public_ip).await?;
@@ -94,7 +130,7 @@ impl Cloudflare {
         Ok(())
     }
 
-    async fn sync_zone(cli: &CfClient, zone: &CfZone, public_ip: &RecordSet) -> Result<()> {
+    async fn sync_zone(cli: &CfClient, zone: &CfZoneCfg, public_ip: &RecordSet) -> Result<()> {
         let public_v4 = public_ip
             .first_a()
             .map(|r| &r.value)
