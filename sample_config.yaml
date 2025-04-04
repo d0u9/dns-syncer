@@ -30,12 +30,22 @@ records:
     backends:
       - provider: cloudflare-1
         zone: example-au.org
+      - provider: cloudflare-2
+        zone: example-us.org
 
 providers:
   - name: cloudflare-1
     type: cloudflare
     authentication:
-      api_token: AABBCCDDEEFFGG
+      type: api_token
+      value: AABBCCDDEEFFGG
+  - name: cloudflare-2
+    type: cloudflare
+    authentication:
+      type: api_key
+      value:
+        email: test@example.com
+        key: AABBCCDDEEFFGG
 
 fetchers:
   - name: http_fetcher-1

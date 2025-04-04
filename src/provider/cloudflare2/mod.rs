@@ -1,5 +1,5 @@
-mod client;
-pub use client::*;
-
 mod cloudflare;
 pub use cloudflare::*;
+
+mod restful_cli;
+use restful_cli::*;

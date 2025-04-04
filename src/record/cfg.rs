@@ -1,5 +1,8 @@
-use super::Record;
 use serde::{Deserialize, Serialize};
+
+use crate::error::Result;
+
+use super::Record;
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 pub enum RecordOp {
@@ -54,6 +57,19 @@ pub struct RecordCfg {
 
     #[serde(flatten)]
     meta: RecordMeta,
+}
+
+/// RecordCfgSet
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+pub struct RecordCfgSet {
+    records: Vec<RecordCfg>,
+}
+
+impl RecordCfgSet {
+    pub fn from_yaml(yaml: &str) -> Result<Self> {
+        let record_cfg_set: RecordCfgSet = serde_yaml::from_str(yaml)?;
+        Ok(record_cfg_set)
+    }
 }
 
 #[cfg(test)]

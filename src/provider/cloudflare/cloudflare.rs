@@ -1,216 +1,204 @@
-use serde::{Deserialize, Serialize};
-use serde_yaml;
-use serde_yaml::Value as YamlValue;
+use async_trait::async_trait;
+use serde::Deserialize;
 
-use crate::error::{Error, Result};
-use crate::fetcher::global;
-use crate::record::{Record, RecordSet, RecordValue};
-
-use super::restful_cli::CfClient;
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) enum CfRecordOp {
-    #[serde(alias = "overwrite")]
-    Overwrite, // overwrite the existing record
-
-    #[serde(alias = "create")]
-    Create, // create a new record if not exists, do nothing if exists
-
-    #[serde(alias = "update")]
-    Update, // update the existing record if exists, do nothing if not exists
-}
-
-impl Default for CfRecordOp {
-    fn default() -> Self {
-        Self::Overwrite
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct CfRecord {
-    record: Record,
-
-    #[serde(default)]
-    pub id: Option<String>,
-
-    #[serde(default)]
-    pub proxied: bool,
-
-    #[serde(default)]
-    pub comment: String,
-
-    #[serde(default)]
-    #[serde(skip_serializing)]
-    pub op: CfRecordOp,
-}
+use crate::error::Error;
+use crate::error::Result;
+use crate::provider::Provider;
+use crate::record::{PublicIp, RecordCfgSet};
+use crate::wrapper::http;
 
 #[derive(Debug, Clone, Deserialize)]
-pub(super) struct CfAuthCfg {
-    api_token: Option<String>,
-    api_key: Option<CfApiKey>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct CfZoneCfg {
-    name: String,
-    records: Vec<CfRecord>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CloudflareCfg {
-    authentication: CfAuthCfg,
-    zones: Vec<CfZoneCfg>,
-}
-
-impl TryFrom<YamlValue> for CloudflareCfg {
-    type Error = Error;
-
-    fn try_from(yaml: YamlValue) -> std::result::Result<Self, Self::Error> {
-        let cfg: CloudflareCfg = serde_yaml::from_value(yaml)?;
-        Ok(cfg)
-    }
-}
-
-/// The implementation of the Cloudflare
-#[derive(Debug, Clone, Deserialize)]
-pub(super) struct CfZone {
-    pub id: String,
-    pub name: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(super) struct CfApiKey {
-    pub email: String,
-    pub key: String,
-}
-
-#[derive(Debug, Clone)]
-pub(super) enum Auth {
+#[serde(tag = "type", content = "value")]
+enum Auth {
+    #[serde(alias = "api_token")]
     ApiToken(String),
-    ApiKey(CfApiKey),
+
+    #[serde(alias = "api_key")]
+    ApiKey { email: String, key: String },
 }
 
-impl TryFrom<CfAuthCfg> for Auth {
-    type Error = Error;
-
-    fn try_from(cfg: CfAuthCfg) -> std::result::Result<Self, Self::Error> {
-        if let Some(api_token) = cfg.api_token {
-            Ok(Self::ApiToken(api_token))
-        } else if let Some(api_key) = cfg.api_key {
-            Ok(Self::ApiKey(api_key))
-        } else {
-            Err(Error::ParseError(
-                "No authentication method provided".to_string(),
-            ))
-        }
-    }
-}
-
-pub struct Cloudflare {
-    auth: Auth,
-    zones: Vec<CfZoneCfg>,
+struct Cloudflare {
+    authentication: Auth,
 }
 
 impl Cloudflare {
-    pub fn from_cfg(cfg: CloudflareCfg) -> Result<Self> {
-        let auth = Auth::try_from(cfg.authentication)?;
-        let zones = cfg.zones;
-        Ok(Self { auth, zones })
+    pub fn new(authentication: Auth) -> Self {
+        Self { authentication }
     }
+}
 
-    pub async fn sync(&self) -> Result<()> {
-        let public_ip = global::fetch().await?;
-
-        let cli = CfClient::new(self.auth.clone());
-
-        for zone in &self.zones {
-            Self::sync_zone(&cli, zone, &public_ip).await?;
-        }
-
+#[async_trait]
+impl Provider for Cloudflare {
+    async fn sync(&self, records: RecordCfgSet, public_ip: PublicIp) -> Result<()> {
         Ok(())
     }
+}
 
-    async fn sync_zone(cli: &CfClient, zone: &CfZoneCfg, public_ip: &RecordSet) -> Result<()> {
-        let public_v4 = public_ip
-            .first_a()
-            .map(|r| &r.value)
-            .unwrap_or(&RecordValue::None);
-        let public_v6 = public_ip
-            .first_aaaa()
-            .map(|r| &r.value)
-            .unwrap_or(&RecordValue::None);
+///////////////////////////////////////////////////////////
+// Client
+///////////////////////////////////////////////////////////
+impl Auth {
+    fn http_headers(&self) -> Vec<http::Header> {
+        match self {
+            Auth::ApiToken(token) => vec![http::Header::new(
+                http::HeaderKey::Authorization,
+                format!("Bearer {}", token),
+            )],
+            Auth::ApiKey { email, key } => vec![
+                http::Header::new(
+                    http::HeaderKey::Custom("X-Auth-Email".to_string()),
+                    email.to_owned(),
+                ),
+                http::Header::new(
+                    http::HeaderKey::Custom("X-Auth-Key".to_string()),
+                    key.to_owned(),
+                ),
+            ],
+        }
+    }
+}
 
-        let cf_records = Self::assign_ip_to_record(&zone.records, public_v4, public_v6)?;
+struct Cli {
+    cli: http::Client,
+    auth: Auth,
+}
 
-        println!("cf_records: {:?}", cf_records);
-        Ok(())
+impl Cli {
+    pub fn new(auth: Auth) -> Self {
+        Self {
+            auth,
+            cli: http::Client::new(),
+        }
+    }
+}
+
+// Basic http method wrappers
+impl Cli {
+    async fn get(&self, url: &str) -> Result<http::Response> {
+        let headers = self.auth.http_headers();
+        let resp = self.cli.get(url, Some(headers)).await?;
+        Ok(resp)
     }
 
-    fn assign_ip_to_record(
-        record_cfg: &[CfRecord],
-        v4_val: &RecordValue,
-        v6_val: &RecordValue,
-    ) -> Result<Vec<CfRecord>> {
-        let mut ret = Vec::new();
+    async fn post(&self, url: &str, body: &str) -> Result<http::Response> {
+        let headers = self.auth.http_headers();
+        let resp = self.cli.post(url, Some(headers), body.to_string()).await?;
+        Ok(resp)
+    }
 
-        for record in record_cfg {
-            let mut cur_record = record.clone();
+    async fn put(&self) -> Result<String> {
+        Err(Error::NotImplemente)
+    }
 
-            match (record.r#type.as_str(), &record.content, v4_val, v6_val) {
-                ("A", None, RecordValue::A(ip), _) => {
-                    cur_record.content = Some(ip.to_string());
-                }
-                ("AAAA", None, _, RecordValue::AAAA(ip)) => {
-                    cur_record.content = Some(ip.to_string());
-                }
-                _ => {}
-            }
+    async fn delete(&self) -> Result<String> {
+        Err(Error::NotImplemente)
+    }
+}
 
-            ret.push(cur_record);
+// Cloudflare API response
+#[derive(Debug, Clone, Deserialize)]
+struct Response {
+    success: bool,
+    result: serde_json::Value,
+}
+
+impl Response {
+    fn into_json(self) -> Result<serde_json::Value> {
+        if self.success {
+            Ok(self.result)
+        } else {
+            Err(Error::ParseError(format!(
+                "cloudflare api call failed: {:?}",
+                self.result
+            )))
         }
+    }
+}
 
-        Ok(ret)
+#[derive(Debug, Clone, Deserialize)]
+struct Zone {
+    id: String,
+    name: String,
+}
+
+// Cloudflare zone API
+impl Cli {
+    pub async fn zone_list(&self, name: &str) -> Result<Option<Zone>> {
+        let url = format!("https://api.cloudflare.com/client/v4/zones?name={}", name);
+        let resp = self.get(&url).await?;
+        let resp: Response = serde_json::from_str(&resp.into_body()?)?;
+        let zones: Vec<Zone> = serde_json::from_value(resp.into_json()?)?;
+
+        match zones.len() {
+            0 => Ok(None),
+            1 => Ok(Some(zones.into_iter().nth(0).unwrap())),
+            _ => Err(Error::ParseError(format!("multiple zones found: {}", name))),
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////
+// Tests
+///////////////////////////////////////////////////////////
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_cf_zone_list() {
+        let cli = init_cli();
+        let (name, id) = zone_name();
+        let zone = cli.zone_list(&name).await.unwrap();
+        if let Some(zone) = zone {
+            assert_eq!(zone.id, id);
+        } else {
+            panic!("Zone not found");
+        }
+    }
+
+    fn init_cli() -> Cli {
+        let token = std::env::var("CF_API_TOKEN").unwrap();
+        let auth = Auth::ApiToken(token);
+        Cli::new(auth)
+    }
+
+    fn zone_name() -> (String, String) {
+        let name = std::env::var("CF_ZONE_NAME").unwrap();
+        let id = std::env::var("CF_ZONE_ID").unwrap();
+        (name, id)
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod test_deserialize {
     use super::*;
-    use std::path::PathBuf;
-
-    #[tokio::test]
-    async fn test_cf_sync() {
-        let cf_cfg_yaml = get_cf_cfg_yaml();
-        let cfg = CloudflareCfg::try_from(cf_cfg_yaml).unwrap();
-
-        let cf = Cloudflare::from_cfg(cfg).unwrap();
-        cf.sync().await.unwrap();
-    }
+    use serde_yaml;
 
     #[test]
-    fn test_cf_cfg_parse() {
-        let cf_cfg_yaml = get_cf_cfg_yaml();
-        let cfg = CloudflareCfg::try_from(cf_cfg_yaml).unwrap();
-        println!("{:?}", cfg);
-    }
-
-    fn get_cf_cfg_yaml() -> YamlValue {
-        #[derive(Debug, Clone, Deserialize)]
-        struct Y {
-            providers: Vec<YamlValue>,
+    fn test_cf_auth_deserialize() {
+        let yaml = r#"
+type: api_token
+value: "1234567890"
+        "#;
+        let auth: Auth = serde_yaml::from_str(yaml).unwrap();
+        if let Auth::ApiToken(token) = auth {
+            assert_eq!(token, "1234567890");
+        } else {
+            panic!("Expected ApiToken");
         }
 
-        let crate_root = std::env::var("CARGO_MANIFEST_DIR").unwrap();
-        let sample_cfg_file = PathBuf::from(crate_root).join("sample_config.yaml");
-        let cfg_yaml = std::fs::read_to_string(sample_cfg_file).unwrap();
-
-        let cfg: Y = serde_yaml::from_str(&cfg_yaml).unwrap();
-        let cf_cfg_yaml = cfg
-            .providers
-            .into_iter()
-            .find(|provider| provider["type"] == "cloudflare")
-            .unwrap();
-
-        cf_cfg_yaml
+        let yaml = r#"
+type: api_key
+value:
+  email: "test@example.com"
+  key: "1234567890"
+        "#;
+        let auth: Auth = serde_yaml::from_str(yaml).unwrap();
+        if let Auth::ApiKey { email, key } = auth {
+            assert_eq!(email, "test@example.com");
+            assert_eq!(key, "1234567890");
+        } else {
+            panic!("Expected ApiKey");
+        }
     }
 }
