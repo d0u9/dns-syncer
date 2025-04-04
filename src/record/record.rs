@@ -70,6 +70,20 @@ impl Record {
     pub fn split(self) -> (RecordEntry, RecordMeta) {
         (self.entry, self.meta)
     }
+
+    pub fn entry(&self) -> &RecordEntry {
+        &self.entry
+    }
+}
+
+// RecordWithOp is used by provider
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct RecordWithOp {
+    #[serde(flatten)]
+    record: Record,
+
+    #[serde(default)]
+    op: RecordOp,
 }
 
 // RecordCfg is used when parsing from yaml
@@ -82,10 +96,7 @@ pub struct Backend {
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct RecordCfg {
     #[serde(flatten)]
-    record: Record,
-
-    #[serde(default)]
-    op: RecordOp,
+    record_with_op: RecordWithOp,
 
     backends: Vec<Backend>,
 }
@@ -143,16 +154,16 @@ backends:
 "#;
 
         let record_cfg: RecordCfg = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(record_cfg.op, RecordOp::Create);
+        assert_eq!(record_cfg.record_with_op.op, RecordOp::Create);
         assert_eq!(
-            record_cfg.record.meta.comment,
+            record_cfg.record_with_op.record.meta.comment,
             Some("DNS Syncer, google dns".to_string())
         );
         assert_eq!(
-            record_cfg.record.meta.labels,
+            record_cfg.record_with_op.record.meta.labels,
             vec![RecordLabel {
                 key: "proxy".to_string(),
-                val: "true".to_string()
+                val: "true".to_string(),
             }]
         );
         assert_eq!(

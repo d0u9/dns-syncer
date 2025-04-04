@@ -13,7 +13,8 @@ records:
         val: true
     backends:
       - provider: cloudflare-1
-        zone: example-au.org
+        zones:
+          - example-au.org
 
   - type: A
     name: case2.dns-syncer-test
@@ -21,7 +22,8 @@ records:
     op: purge
     backends:
       - provider: cloudflare-1
-        zone: example-au.org
+        zones:
+          - example-au.org
 
   - type: AAAA
     name: case1.dns-syncer-test
@@ -29,9 +31,12 @@ records:
     op: create
     backends:
       - provider: cloudflare-1
-        zone: example-au.org
+        zones:
+          - example-au.org
+          - example-uk.org
       - provider: cloudflare-2
-        zone: example-us.org
+        zones:
+          - example-us.org
 
 providers:
   - name: cloudflare-1

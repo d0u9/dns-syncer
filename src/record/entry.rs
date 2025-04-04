@@ -76,10 +76,10 @@ impl<'de> Deserialize<'de> for RecordTTL {
 /// A record for an A record
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct RecordA {
-    pub name: Option<String>,
+    pub name: String,
 
     #[serde(alias = "content")]
-    pub value: Option<Ipv4Addr>,
+    pub value: Ipv4Addr,
 
     #[serde(default)]
     pub ttl: RecordTTL,
@@ -88,10 +88,10 @@ pub struct RecordA {
 /// A record for an AAAA record
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct RecordAAAA {
-    pub name: Option<String>,
+    pub name: String,
 
     #[serde(alias = "content")]
-    pub value: Option<Ipv6Addr>,
+    pub value: Ipv6Addr,
 
     #[serde(default)]
     pub ttl: RecordTTL,
@@ -100,10 +100,10 @@ pub struct RecordAAAA {
 /// A record for a CNAME record
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct RecordCNAME {
-    pub name: Option<String>,
+    pub name: String,
 
     #[serde(alias = "content")]
-    pub value: Option<String>,
+    pub value: String,
 
     #[serde(default)]
     pub ttl: RecordTTL,
@@ -119,12 +119,21 @@ pub enum RecordEntry {
 }
 
 impl RecordEntry {
+    // TODO: deprecate this method
     pub fn new_v4_none_name(ip: Ipv4Addr) -> Self {
         Self::A(RecordA {
-            name: None,
-            value: Some(ip),
+            name: "".to_string(),
+            value: ip,
             ttl: RecordTTL::Auto,
         })
+    }
+
+    pub fn name(&self) -> &str {
+        match self {
+            Self::A(record) => &record.name,
+            Self::AAAA(record) => &record.name,
+            Self::CNAME(record) => &record.name,
+        }
     }
 }
 
@@ -191,6 +200,7 @@ mod test {
     mod test_deserialize {
         use super::*;
         use serde_yaml;
+        use tokio::sync::AcquireError;
 
         #[test]
         fn test_record() {
@@ -203,7 +213,7 @@ ttl: auto
 
             let record: RecordEntry = serde_yaml::from_str(yaml).unwrap();
             if let RecordEntry::A(record) = record {
-                assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
+                assert_eq!(record.value, Ipv4Addr::new(1, 2, 3, 4));
                 assert_eq!(record.ttl, RecordTTL::Auto);
             } else {
                 panic!("record is not a A record");
@@ -218,10 +228,8 @@ value: 1.2.3.4
 ttl: auto
         "#;
 
-            let record: RecordA = serde_yaml::from_str(yaml).unwrap();
-            assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
-            assert_eq!(record.ttl, RecordTTL::Auto);
-            assert_eq!(record.name, None);
+            let err = serde_yaml::from_str::<RecordA>(yaml).unwrap_err();
+            assert!(err.to_string().contains("missing field `name`"));
         }
 
         #[test]
@@ -234,7 +242,7 @@ ttl: auto
         "#;
 
             let record: RecordA = serde_yaml::from_str(yaml).unwrap();
-            assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
+            assert_eq!(record.value, Ipv4Addr::new(1, 2, 3, 4));
             assert_eq!(record.ttl, RecordTTL::Auto);
         }
 
@@ -248,7 +256,7 @@ ttl: "3560"
         "#;
 
             let record: RecordA = serde_yaml::from_str(yaml).unwrap();
-            assert_eq!(record.value, Some(Ipv4Addr::new(1, 2, 3, 4)));
+            assert_eq!(record.value, Ipv4Addr::new(1, 2, 3, 4));
             assert_eq!(record.ttl, RecordTTL::Value(3560));
         }
     }

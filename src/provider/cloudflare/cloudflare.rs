@@ -150,6 +150,7 @@ struct CfRecord {
     #[serde(flatten)]
     entry: RecordEntry,
 
+    id: String,
     comment: Option<String>,
     proxied: bool,
 }
@@ -160,6 +161,7 @@ impl From<Record> for CfRecord {
 
         let (comment, labels) = meta.split();
         Self {
+            id: "".to_string(),
             entry,
             comment: comment,
             proxied: labels.iter().any(|l| l.tuple_ref() == ("proxied", "true")),
@@ -170,6 +172,7 @@ impl From<Record> for CfRecord {
 impl From<CfRecord> for Record {
     fn from(record: CfRecord) -> Self {
         let CfRecord {
+            id: _,
             entry,
             comment,
             proxied,
@@ -187,7 +190,7 @@ impl From<CfRecord> for Record {
 
 // Cloudflare record API
 impl Cli {
-    pub async fn records_list(&self, zone_id: &str) -> Result<Vec<Record>> {
+    pub async fn records_list(&self, zone_id: &str) -> Result<Vec<CfRecord>> {
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/dns_records",
             zone_id
@@ -196,10 +199,10 @@ impl Cli {
         let resp: CfResponse = serde_json::from_str(&resp.into_body()?)?;
         let jsonbody = resp.into_json()?;
         let records: Vec<CfRecord> = serde_json::from_value(jsonbody)?;
-        Ok(records.into_iter().map(|r| r.into()).collect())
+        Ok(records)
     }
 
-    pub async fn records_list_by_name(&self, zone_id: &str, name: &str) -> Result<Vec<Record>> {
+    pub async fn records_list_by_name(&self, zone_id: &str, name: &str) -> Result<Vec<CfRecord>> {
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/dns_records?name={}",
             zone_id, name
@@ -208,7 +211,7 @@ impl Cli {
         let resp: CfResponse = serde_json::from_str(&resp.into_body()?)?;
         let jsonbody = resp.into_json()?;
         let records: Vec<CfRecord> = serde_json::from_value(jsonbody)?;
-        Ok(records.into_iter().map(|r| r.into()).collect())
+        Ok(records)
     }
 }
 
@@ -248,6 +251,40 @@ impl Cli {
 
         Ok(())
     }
+
+    pub async fn record_op_purge(&self, zone_id: &str, record: Record) -> Result<()> {
+        let name = record.entry().name();
+        let rcd = self.records_list_by_name(zone_id, name).await?;
+        let deletes: Vec<BatchRecordDelete> = rcd
+            .iter()
+            .map(|r| BatchRecordDelete { id: r.id.clone() })
+            .collect();
+        let batch = BatchRecord {
+            deletes: Some(deletes),
+            patches: None,
+            posts: Some(vec![record.into()]),
+        };
+
+        let url = format!(
+            "https://api.cloudflare.com/client/v4/zones/{}/dns_records/batch",
+            zone_id
+        );
+        let body = serde_json::to_string(&batch)?;
+        let resp = self.post(&url, &body).await?;
+        let json = resp.into_body().map_err(|e| {
+            Error::HttpError(format!("force overwrite record failed: {}", e.to_string()))
+        })?;
+
+        let resp: CfResponse = serde_json::from_str(&json)?;
+
+        resp.into_json().map_err(|e| {
+            Error::HttpError(format!(
+                "force overwrite record failed from cloudflare: {}",
+                e.to_string()
+            ))
+        })?;
+        Ok(())
+    }
 }
 ///////////////////////////////////////////////////////////
 // Tests
@@ -264,18 +301,30 @@ mod test {
         use crate::record::RecordTTL;
 
         #[tokio::test]
+        async fn test_cf_record_op_purge() {
+            let (zone_name, zone_id) = zone_name();
+            let entry = RecordEntry::A(RecordA {
+                name: format!("testcf.{}", zone_name),
+                value: Ipv4Addr::new(1, 2, 3, 7),
+                ttl: RecordTTL::Auto,
+            });
+            let record = Record::new(entry);
+            let cli = init_cli();
+            let _resp = cli.record_op_purge(&zone_id, record).await.unwrap();
+        }
+
+        #[tokio::test]
         async fn test_cf_record_op_create() {
             let (zone_name, zone_id) = zone_name();
             let entry = RecordEntry::A(RecordA {
-                name: Some(format!("testcf.{}", zone_name)),
-                value: Some(Ipv4Addr::new(1, 2, 3, 5)),
+                name: format!("testcf.{}", zone_name),
+                value: Ipv4Addr::new(1, 2, 3, 5),
                 ttl: RecordTTL::Auto,
             });
             let record = Record::new(entry);
 
             let cli = init_cli();
-            let resp = cli.record_op_create(&zone_id, record).await.unwrap();
-            println!("{:?}", resp);
+            let _resp = cli.record_op_create(&zone_id, record).await.unwrap();
         }
     }
 
