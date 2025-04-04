@@ -1,74 +1,45 @@
 use serde::{Serialize, ser::SerializeStruct};
 
-use crate::record::RecordA;
-use crate::record::RecordAAAA;
-use crate::record::RecordCNAME;
-use crate::record::RecordEntry;
-use crate::record::RecordTTL;
+use crate::record::RecordContent;
 
-impl Serialize for RecordEntry {
+impl Serialize for RecordContent {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
         match self {
-            RecordEntry::A(a) => a.serialize(serializer),
-            RecordEntry::AAAA(aaaa) => aaaa.serialize(serializer),
-            RecordEntry::CNAME(cname) => cname.serialize(serializer),
+            RecordContent::A(a) => {
+                let mut state = serializer.serialize_struct("RecordA", 2)?;
+                state.serialize_field("type", &"A")?;
+                state.serialize_field("content", &a.to_string())?;
+                state.end()
+            }
+            RecordContent::AAAA(aaaa) => {
+                let mut state = serializer.serialize_struct("RecordAAAA", 2)?;
+                state.serialize_field("type", &"AAAA")?;
+                state.serialize_field("content", &aaaa.to_string())?;
+                state.end()
+            }
+            RecordContent::CNAME(cname) => {
+                let mut state = serializer.serialize_struct("RecordCNAME", 2)?;
+                state.serialize_field("type", &"CNAME")?;
+                state.serialize_field("content", &cname.to_string())?;
+                state.end()
+            }
+            RecordContent::None => serializer.serialize_unit(),
         }
     }
 }
 
-impl Serialize for RecordA {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("RecordA", 4)?;
-        state.serialize_field("type", &"A")?;
-        state.serialize_field("name", &self.name)?;
-        state.serialize_field("content", &self.value)?;
-        state.serialize_field("ttl", &self.ttl)?;
-        state.end()
-    }
-}
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::net::Ipv4Addr;
 
-impl Serialize for RecordAAAA {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("RecordAAAA", 4)?;
-        state.serialize_field("type", &"AAAA")?;
-        state.serialize_field("name", &self.name)?;
-        state.serialize_field("content", &self.value)?;
-        state.serialize_field("ttl", &self.ttl)?;
-        state.end()
-    }
-}
-
-impl Serialize for RecordCNAME {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        let mut state = serializer.serialize_struct("RecordCNAME", 4)?;
-        state.serialize_field("type", &"CNAME")?;
-        state.serialize_field("name", &self.name)?;
-        state.serialize_field("content", &self.value)?;
-        state.serialize_field("ttl", &self.ttl)?;
-        state.end()
-    }
-}
-
-impl Serialize for RecordTTL {
-    fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            RecordTTL::Auto => serializer.serialize_u32(1),
-            RecordTTL::Value(v) => serializer.serialize_u32(*v),
-        }
+    #[test]
+    fn test_serialize_record_content() {
+        let record_content = RecordContent::A(Ipv4Addr::new(192, 168, 1, 1));
+        let serialized = serde_json::to_string(&record_content).unwrap();
+        println!("{}", serialized);
     }
 }

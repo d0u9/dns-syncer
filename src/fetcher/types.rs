@@ -1,9 +1,9 @@
 use crate::error::Result;
-use crate::record::RecordEntrySet;
+use crate::record::FetcherRecordSet;
 
 use async_trait::async_trait;
 
 #[async_trait]
 pub trait Fetcher {
-    async fn fetch(&self) -> Result<RecordEntrySet>;
+    async fn fetch(&self) -> Result<FetcherRecordSet>;
 }

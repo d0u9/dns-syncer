@@ -4,13 +4,13 @@ use std::time;
 use crate::error::{Error, Result};
 use crate::fetcher::Fetcher;
 use crate::fetcher::HttpFetcher;
-use crate::record::RecordEntrySet;
+use crate::record::FetcherRecordSet;
 
 static GLOBAL_FETCHER: Mutex<Option<GlobalFetcher>> = Mutex::new(None);
 
 struct GlobalFetcher {
     lifetime: time::Duration,
-    cache_result: RecordEntrySet,
+    cache_result: FetcherRecordSet,
     last_fetch_time: time::Instant,
     fetcher: Box<dyn Fetcher + Send + Sync>,
 }
@@ -19,7 +19,7 @@ impl Default for GlobalFetcher {
     fn default() -> Self {
         Self {
             lifetime: time::Duration::from_secs(20), // 5 minutes default
-            cache_result: RecordEntrySet::default(),
+            cache_result: FetcherRecordSet::default(),
             last_fetch_time: time::Instant::now(),
             fetcher: Box::new(HttpFetcher::default()),
         }
@@ -32,7 +32,7 @@ impl GlobalFetcher {
     }
 }
 
-pub async fn fetch() -> Result<RecordEntrySet> {
+pub async fn fetch() -> Result<FetcherRecordSet> {
     let mut guard = GLOBAL_FETCHER
         .lock()
         .map_err(|_| Error::GlobalFetcherError("failed to lock global fetcher".to_string()))?;

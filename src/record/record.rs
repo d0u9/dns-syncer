@@ -1,174 +1,103 @@
+use std::net::Ipv4Addr;
+use std::net::Ipv6Addr;
+
 use serde::Deserialize;
 
-use crate::error::Result;
+pub type ZoneName = String;
 
-use super::RecordEntry;
-
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RecordLabel {
     key: String,
-
-    #[serde(alias = "value")]
     val: String,
 }
 
-impl RecordLabel {
-    pub fn new(key: String, val: String) -> Self {
-        Self { key, val }
-    }
-
-    pub fn tuple_ref(&self) -> (&str, &str) {
-        (&self.key, &self.val)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Default, Deserialize)]
-pub struct RecordMeta {
-    #[serde(default)]
-    comment: Option<String>,
-
-    #[serde(default)]
-    labels: Vec<RecordLabel>,
-}
-
-impl RecordMeta {
-    pub fn append_label(&mut self, label: RecordLabel) {
-        self.labels.push(label);
-    }
-
-    pub fn split(self) -> (Option<String>, Vec<RecordLabel>) {
-        (self.comment, self.labels)
-    }
-}
-
-// Record is wrapper with metainfo aside to original RecordEntry
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Record {
-    #[serde(flatten)]
-    entry: RecordEntry,
-
-    #[serde(flatten)]
-    meta: RecordMeta,
+#[serde(tag = "type", content = "content")]
+pub enum RecordContent {
+    #[serde(alias = "a")]
+    A(Ipv4Addr),
+    #[serde(alias = "aaaa")]
+    AAAA(Ipv6Addr),
+    #[serde(alias = "cname")]
+    CNAME(String),
+    #[serde(alias = "none")]
+    None,
 }
 
-impl Record {
-    pub fn new(entry: RecordEntry) -> Self {
+impl RecordContent {
+    pub fn is_none(&self) -> bool {
+        matches!(self, RecordContent::None)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct FetcherRecord {
+    pub value: RecordContent,
+    pub labels: Vec<RecordLabel>,
+}
+
+impl FetcherRecord {
+    pub fn new(value: RecordContent) -> Self {
         Self {
-            entry,
-            meta: RecordMeta::default(),
+            value,
+            labels: vec![],
         }
     }
 
-    pub fn append_label(&mut self, label: RecordLabel) {
-        self.meta.append_label(label);
-    }
-
-    pub fn set_comment(&mut self, comment: String) {
-        self.meta.comment = Some(comment);
-    }
-
-    pub fn split(self) -> (RecordEntry, RecordMeta) {
-        (self.entry, self.meta)
-    }
-
-    pub fn entry(&self) -> &RecordEntry {
-        &self.entry
+    pub fn new_v4(value: Ipv4Addr) -> Self {
+        Self {
+            value: RecordContent::A(value),
+            labels: vec![],
+        }
     }
 }
 
-// RecordWithOp is used by provider
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct RecordWithOp {
-    #[serde(flatten)]
-    record: Record,
-
-    #[serde(default)]
-    op: RecordOp,
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct FetcherRecordSet {
+    contents: Vec<FetcherRecord>,
 }
 
-// RecordCfg is used when parsing from yaml
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct Backend {
-    provider: String,
-    zone: String,
+impl FetcherRecordSet {
+    pub fn new() -> Self {
+        Self { contents: vec![] }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.contents.is_empty()
+    }
+
+    pub fn push(&mut self, content: FetcherRecord) {
+        self.contents.push(content);
+    }
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct RecordCfg {
-    #[serde(flatten)]
-    record_with_op: RecordWithOp,
-
-    backends: Vec<Backend>,
+////////////////////////////////////////////////////////////
+// Provider Record
+////////////////////////////////////////////////////////////
+#[derive(Debug, Clone, PartialEq)]
+pub enum TTL {
+    Auto,
+    Value(u32),
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub enum RecordOp {
-    #[serde(alias = "create")]
-    Create, // create a new record if not exists, do nothing if exists
-
-    #[serde(alias = "purge")]
-    Purge, // Remove all records with the same name, and create new one.
-}
-
-impl Default for RecordOp {
+impl Default for TTL {
     fn default() -> Self {
-        Self::Create
+        Self::Auto
     }
 }
 
-/// RecordCfgSet
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct RecordCfgSet {
-    records: Vec<RecordCfg>,
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderParam {
+    pub name: String,
+    pub value: String,
 }
 
-impl RecordCfgSet {
-    pub fn from_yaml(yaml: &str) -> Result<Self> {
-        let record_cfg_set: RecordCfgSet = serde_yaml::from_str(yaml)?;
-        Ok(record_cfg_set)
-    }
-}
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProviderRecord {
+    pub name: String,
+    pub content: RecordContent,
+    pub comment: Option<String>,
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_record_cfg_deserialize_with_sync_to() {
-        let yaml = r#"
-type: A
-name: case1.dns-syncer-test
-proxied: true
-content: 8.8.8.8
-comment: 'DNS Syncer, google dns'
-op: create
-labels:
-  - key: "proxy"
-    val: "true"
-backends:
-  - provider: "cloudflare-1"
-    zone: "example-au.org"
-"#;
-
-        let record_cfg: RecordCfg = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(record_cfg.record_with_op.op, RecordOp::Create);
-        assert_eq!(
-            record_cfg.record_with_op.record.meta.comment,
-            Some("DNS Syncer, google dns".to_string())
-        );
-        assert_eq!(
-            record_cfg.record_with_op.record.meta.labels,
-            vec![RecordLabel {
-                key: "proxy".to_string(),
-                val: "true".to_string(),
-            }]
-        );
-        assert_eq!(
-            record_cfg.backends,
-            vec![Backend {
-                provider: "cloudflare-1".to_string(),
-                zone: "example-au.org".to_string(),
-            }]
-        );
-    }
+    pub ttl: TTL,
+    pub params: Vec<ProviderParam>,
 }

@@ -4,24 +4,23 @@ use crate::error::{Error, Result};
 use crate::wrapper::http;
 
 use super::Fetcher;
-use crate::record::{RecordEntry, RecordEntrySet};
+use crate::record::FetcherRecord;
+use crate::record::FetcherRecordSet;
 
 #[derive(Debug, Clone, Default)]
 pub struct HttpFetcher;
 
 impl HttpFetcher {
-    pub async fn fetch(&self) -> Result<RecordEntrySet> {
-        let mut ret = RecordEntrySet::default();
-
-        ret.records.push(CloudflareFetcher::fetch_v4().await?);
-
+    pub async fn fetch(&self) -> Result<FetcherRecordSet> {
+        let mut ret = FetcherRecordSet::default();
+        ret.push(CloudflareFetcher::fetch_v4().await?);
         Ok(ret)
     }
 }
 
 #[async_trait]
 impl Fetcher for HttpFetcher {
-    async fn fetch(&self) -> Result<RecordEntrySet> {
+    async fn fetch(&self) -> Result<FetcherRecordSet> {
         self.fetch().await
     }
 }
@@ -29,7 +28,7 @@ impl Fetcher for HttpFetcher {
 struct CloudflareFetcher;
 
 impl CloudflareFetcher {
-    pub async fn fetch_v4() -> Result<RecordEntry> {
+    pub async fn fetch_v4() -> Result<FetcherRecord> {
         let url = "https://1.1.1.1/cdn-cgi/trace";
         let response = http::get(url).await?;
         if response.status != 200 {
@@ -40,7 +39,7 @@ impl CloudflareFetcher {
         }
 
         let ip = Self::parse_content_v4(&response.body).await?;
-        let record = RecordEntry::new_v4_none_name(ip.parse()?);
+        let record = FetcherRecord::new_v4(ip.parse()?);
         Ok(record)
     }
 

@@ -4,16 +4,15 @@ use serde::{Deserialize, Serialize};
 use crate::error::Error;
 use crate::error::Result;
 use crate::provider::Provider;
-use crate::record::PublicIp;
-use crate::record::Record;
-use crate::record::RecordCfgSet;
-use crate::record::RecordEntry;
-use crate::record::RecordLabel;
+use crate::record::ConfigRecord;
+use crate::record::ProviderRecord;
+use crate::record::RecordContent;
+use crate::record::TTL;
 use crate::wrapper::http;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", content = "value")]
-enum Auth {
+pub(super) enum Auth {
     #[serde(alias = "api_token")]
     ApiToken(String),
 
@@ -33,7 +32,7 @@ impl Cloudflare {
 
 #[async_trait]
 impl Provider for Cloudflare {
-    async fn sync(&self, records: RecordCfgSet, public_ip: PublicIp) -> Result<()> {
+    async fn sync(&self) -> Result<()> {
         Ok(())
     }
 }
@@ -62,7 +61,7 @@ impl Auth {
     }
 }
 
-struct Cli {
+pub(super) struct Cli {
     cli: http::Client,
 }
 
@@ -104,7 +103,7 @@ impl Cli {
 
 // Cloudflare API response
 #[derive(Debug, Clone, Deserialize)]
-struct CfResponse {
+pub(super) struct CfResponse {
     success: bool,
     result: serde_json::Value,
 }
@@ -123,9 +122,9 @@ impl CfResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-struct CfZone {
-    id: String,
-    name: String,
+pub(super) struct CfZone {
+    pub id: String,
+    pub name: String,
 }
 
 // Cloudflare zone API
@@ -146,45 +145,33 @@ impl Cli {
 
 // Cloudflare record
 #[derive(Debug, Clone, Deserialize, Serialize)]
-struct CfRecord {
+pub(super) struct CfRecord {
+    pub id: String,
+    pub name: String,
+    pub comment: Option<String>,
+    pub proxied: bool,
+    pub ttl: u32,
+
     #[serde(flatten)]
-    entry: RecordEntry,
-
-    id: String,
-    comment: Option<String>,
-    proxied: bool,
+    pub content: RecordContent,
 }
 
-impl From<Record> for CfRecord {
-    fn from(record: Record) -> Self {
-        let (entry, meta) = record.split();
-
-        let (comment, labels) = meta.split();
+impl From<ProviderRecord> for CfRecord {
+    fn from(record: ProviderRecord) -> Self {
         Self {
-            id: "".to_string(),
-            entry,
-            comment: comment,
-            proxied: labels.iter().any(|l| l.tuple_ref() == ("proxied", "true")),
+            id: String::new(),
+            name: record.name,
+            comment: record.comment,
+            content: record.content,
+            ttl: match record.ttl {
+                TTL::Auto => 1,
+                TTL::Value(v) => v,
+            },
+            proxied: record
+                .params
+                .iter()
+                .any(|p| p.name == "proxied" && p.value == "true"),
         }
-    }
-}
-
-impl From<CfRecord> for Record {
-    fn from(record: CfRecord) -> Self {
-        let CfRecord {
-            id: _,
-            entry,
-            comment,
-            proxied,
-        } = record;
-
-        let label = RecordLabel::new("proxied".to_string(), proxied.to_string());
-        let mut slf = Self::new(entry);
-        if let Some(comment) = comment {
-            slf.set_comment(comment);
-        }
-        slf.append_label(label);
-        slf
     }
 }
 
@@ -229,7 +216,7 @@ struct BatchRecord {
 }
 
 impl Cli {
-    pub async fn record_op_create(&self, zone_id: &str, record: Record) -> Result<()> {
+    pub async fn record_op_create(&self, zone_id: &str, record: ProviderRecord) -> Result<()> {
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/dns_records",
             zone_id
@@ -252,9 +239,8 @@ impl Cli {
         Ok(())
     }
 
-    pub async fn record_op_purge(&self, zone_id: &str, record: Record) -> Result<()> {
-        let name = record.entry().name();
-        let rcd = self.records_list_by_name(zone_id, name).await?;
+    pub async fn record_op_purge(&self, zone_id: &str, record: ProviderRecord) -> Result<()> {
+        let rcd = self.records_list_by_name(zone_id, &record.name).await?;
         let deletes: Vec<BatchRecordDelete> = rcd
             .iter()
             .map(|r| BatchRecordDelete { id: r.id.clone() })
@@ -284,151 +270,5 @@ impl Cli {
             ))
         })?;
         Ok(())
-    }
-}
-///////////////////////////////////////////////////////////
-// Tests
-///////////////////////////////////////////////////////////
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use std::net::Ipv4Addr;
-
-    mod test_record_op {
-        use super::*;
-        use crate::record::RecordA;
-        use crate::record::RecordTTL;
-
-        #[tokio::test]
-        async fn test_cf_record_op_purge() {
-            let (zone_name, zone_id) = zone_name();
-            let entry = RecordEntry::A(RecordA {
-                name: format!("testcf.{}", zone_name),
-                value: Ipv4Addr::new(1, 2, 3, 7),
-                ttl: RecordTTL::Auto,
-            });
-            let record = Record::new(entry);
-            let cli = init_cli();
-            let _resp = cli.record_op_purge(&zone_id, record).await.unwrap();
-        }
-
-        #[tokio::test]
-        async fn test_cf_record_op_create() {
-            let (zone_name, zone_id) = zone_name();
-            let entry = RecordEntry::A(RecordA {
-                name: format!("testcf.{}", zone_name),
-                value: Ipv4Addr::new(1, 2, 3, 5),
-                ttl: RecordTTL::Auto,
-            });
-            let record = Record::new(entry);
-
-            let cli = init_cli();
-            let _resp = cli.record_op_create(&zone_id, record).await.unwrap();
-        }
-    }
-
-    mod test_record {
-        use super::*;
-
-        #[tokio::test]
-        async fn test_cf_records_list_by_name() {
-            let cli = init_cli();
-            let (zone_name, zone_id) = zone_name();
-            let name = format!("testcf.{}", zone_name);
-            let records = cli.records_list_by_name(&zone_id, &name).await.unwrap();
-            println!("{:?}", records);
-        }
-
-        #[tokio::test]
-        async fn test_cf_records_list() {
-            let cli = init_cli();
-            let (_name, id) = zone_name();
-            let records = cli.records_list(&id).await.unwrap();
-            println!("{:?}", records);
-        }
-    }
-
-    mod test_zone {
-        use super::*;
-
-        #[tokio::test]
-        async fn test_cf_zone_list() {
-            let cli = init_cli();
-            let (name, id) = zone_name();
-            let zone = cli.zone_list(&name).await.unwrap();
-            if let Some(zone) = zone {
-                assert_eq!(zone.id, id);
-            } else {
-                panic!("Zone not found");
-            }
-        }
-    }
-
-    fn init_cli() -> Cli {
-        let token = std::env::var("CF_API_TOKEN").unwrap();
-        let auth = Auth::ApiToken(token);
-        Cli::new(auth)
-    }
-
-    fn zone_name() -> (String, String) {
-        let name = std::env::var("CF_ZONE_NAME").unwrap();
-        let id = std::env::var("CF_ZONE_ID").unwrap();
-        (name, id)
-    }
-}
-
-#[cfg(test)]
-mod test_deserialize {
-    use super::*;
-    use serde_yaml;
-
-    #[test]
-    fn test_cf_record_deserialize() {
-        let json = r#"{
-        "comment": null,
-        "content": "42.192.202.2",
-        "created_on": "2022-06-08T02:19:45.956932Z",
-        "id": "79de548c4af681c2af1a9e92be42d004",
-        "meta": {},
-        "modified_on": "2022-06-08T02:19:45.956932Z",
-        "name": "cn.d0u9.top",
-        "proxiable": true,
-        "proxied": false,
-        "settings": {},
-        "tags": [],
-        "ttl": 1,
-        "type": "A"
-    }"#;
-        let record: CfRecord = serde_json::from_str(json).unwrap();
-        println!("{:?}", record);
-    }
-
-    #[test]
-    fn test_cf_auth_deserialize() {
-        let yaml = r#"
-type: api_token
-value: "1234567890"
-        "#;
-        let auth: Auth = serde_yaml::from_str(yaml).unwrap();
-        if let Auth::ApiToken(token) = auth {
-            assert_eq!(token, "1234567890");
-        } else {
-            panic!("Expected ApiToken");
-        }
-
-        let yaml = r#"
-type: api_key
-value:
-  email: "test@example.com"
-  key: "1234567890"
-        "#;
-        let auth: Auth = serde_yaml::from_str(yaml).unwrap();
-        if let Auth::ApiKey { email, key } = auth {
-            assert_eq!(email, "test@example.com");
-            assert_eq!(key, "1234567890");
-        } else {
-            panic!("Expected ApiKey");
-        }
     }
 }
