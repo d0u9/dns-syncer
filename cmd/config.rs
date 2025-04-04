@@ -5,6 +5,8 @@ use std::path::Path;
 use serde::Deserialize;
 
 use dns_syncer::error::Result;
+use dns_syncer::record::ProviderParam;
+use dns_syncer::record::ProviderRecord;
 use dns_syncer::record::RecordContent;
 use dns_syncer::record::RecordOp;
 use dns_syncer::record::TTL;
@@ -18,10 +20,10 @@ pub struct CfgRecord {
     pub content: RecordContent,
 
     #[serde(default)]
-    pub op: RecordOp,
+    pub comment: Option<String>,
 
     #[serde(default)]
-    pub comment: Option<String>,
+    pub op: RecordOp,
 
     #[serde(default)]
     pub ttl: TTL,
@@ -33,6 +35,23 @@ impl CfgRecord {
             self.content = content;
         }
         self
+    }
+
+    pub fn into_provider_record(self, params: &Vec<CfgRecordBackendParams>) -> ProviderRecord {
+        ProviderRecord {
+            name: self.name,
+            content: self.content,
+            comment: self.comment,
+            op: self.op,
+            ttl: self.ttl,
+            params: params
+                .into_iter()
+                .map(|p| ProviderParam {
+                    name: p.name.clone(),
+                    value: p.value.clone(),
+                })
+                .collect(),
+        }
     }
 }
 

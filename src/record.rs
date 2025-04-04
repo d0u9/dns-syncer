@@ -169,7 +169,7 @@ pub struct ProviderRecord {
     pub content: RecordContent,
     pub comment: Option<String>,
     pub op: RecordOp,
-
     pub ttl: TTL,
+
     pub params: Vec<ProviderParam>,
 }
