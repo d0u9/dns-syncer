@@ -230,7 +230,11 @@ pub struct ProviderRecord {
 }
 
 impl ProviderRecord {
-    pub fn assign_public_ip_if_unassigned(&mut self, v4: Option<Ipv4Addr>, v6: Option<Ipv6Addr>) -> Result<()> {
+    pub fn assign_public_ip_if_unassigned(
+        &mut self,
+        v4: Option<Ipv4Addr>,
+        v6: Option<Ipv6Addr>,
+    ) -> Result<()> {
         match (&self.content, (v4, v6)) {
             (RecordContent::Unassigned(RecordType::A), (Some(v4), _)) => {
                 self.content = RecordContent::A(v4)

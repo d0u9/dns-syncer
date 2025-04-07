@@ -93,26 +93,44 @@ pub struct CfgProviderAuthentication {
     pub params: Vec<CfgProviderAuthenticationParams>,
 }
 
+impl CfgProviderAuthentication {
+    pub fn get_value_ref(&self, key: &str) -> Option<&str> {
+        self.params
+            .iter()
+            .find(|p| p.key == key)
+            .map(|p| p.value.as_str())
+    }
+}
+
 impl TryFrom<CfgProviderAuthentication> for Auth {
     type Error = Error;
 
     fn try_from(cfg: CfgProviderAuthentication) -> Result<Self> {
-        match cfg.method.as_str() {
-            "api_token" => Ok(Auth::ApiToken(
-                cfg.params
-                    .iter()
-                    .find(|p| p.key == "api_token")
-                    .ok_or(Error::Provider(format!(
-                        "{}: api_token not found",
-                        cfg.method
-                    )))?
-                    .value
-                    .clone(),
-            )),
-            _ => Err(Error::Provider(format!(
-                "{}: unsupported authentication method",
+        if cfg.method == "api_token" {
+            let api_token = cfg
+                .get_value_ref("api_token")
+                .ok_or(Error::Provider(format!(
+                    "cloudflare authencation method is declared as api_token, but api_token is not found",
+                )))?;
+            Ok(Auth::ApiToken(api_token.to_string()))
+        } else if cfg.method == "api_key" {
+            let email = cfg.get_value_ref("email");
+            let key = cfg.get_value_ref("key");
+
+            match (email, key) {
+                (Some(email), Some(key)) => Ok(Auth::ApiKey {
+                    email: email.to_string(),
+                    key: key.to_string(),
+                }),
+                _ => Err(Error::Provider(
+                    "cloudflare api_key auth requires both email and key".into(),
+                )),
+            }
+        } else {
+            Err(Error::Provider(format!(
+                "{}: unsupported authentication method for cloudflare provider",
                 cfg.method
-            ))),
+            )))
         }
     }
 }
