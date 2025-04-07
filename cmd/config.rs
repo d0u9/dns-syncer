@@ -4,7 +4,9 @@ use std::path::Path;
 
 use serde::Deserialize;
 
+use dns_syncer::error::Error;
 use dns_syncer::error::Result;
+use dns_syncer::provider::Auth;
 use dns_syncer::record::ProviderParam;
 use dns_syncer::record::ProviderRecord;
 use dns_syncer::record::RecordContent;
@@ -37,7 +39,7 @@ impl CfgRecord {
         self
     }
 
-    pub fn into_provider_record(self, params: &Vec<CfgRecordBackendParams>) -> ProviderRecord {
+    pub fn into_provider_record(self, params: &Vec<CfgRecordParam>) -> ProviderRecord {
         ProviderRecord {
             name: self.name,
             content: self.content,
@@ -60,22 +62,30 @@ pub struct CfgRecordItem {
     #[serde(flatten)]
     pub record: CfgRecord,
 
-    pub backends: Vec<CfgRecordBackend>,
+    pub providers: Vec<CfgRecordProvider>,
+
+    #[serde(default)]
+    pub fetchers: Vec<CfgRecordFetcher>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct CfgRecordBackendParams {
+pub struct CfgRecordParam {
     pub name: String,
     pub value: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct CfgRecordBackend {
-    pub provider: String,
+pub struct CfgRecordFetcher {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfgRecordProvider {
+    pub name: String,
     pub zones: Vec<ZoneName>,
 
     #[serde(default)]
-    pub params: Vec<CfgRecordBackendParams>,
+    pub params: Vec<CfgRecordParam>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -88,6 +98,30 @@ pub struct CfgProviderAuthenticationParams {
 pub struct CfgProviderAuthentication {
     pub method: String,
     pub params: Vec<CfgProviderAuthenticationParams>,
+}
+
+impl TryFrom<CfgProviderAuthentication> for Auth {
+    type Error = Error;
+
+    fn try_from(cfg: CfgProviderAuthentication) -> Result<Self> {
+        match cfg.method.as_str() {
+            "api_token" => Ok(Auth::ApiToken(
+                cfg.params
+                    .iter()
+                    .find(|p| p.key == "api_token")
+                    .ok_or(Error::Provider(format!(
+                        "{}: api_token not found",
+                        cfg.method
+                    )))?
+                    .value
+                    .clone(),
+            )),
+            _ => Err(Error::Provider(format!(
+                "{}: unsupported authentication method",
+                cfg.method
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -148,13 +182,15 @@ content: 8.8.8.8
 comment: 'DNS Syncer, google dns'
 ttl: 300
 op: create
-backends:
-- provider: "cloudflare-1"
+providers:
+- name: "cloudflare-1"
   params:
     - name: "proxied"
       value: "true"
   zones:
     - "example-au.org"
+fetchers:
+  - name: "http_fetcher-1"
 "#;
 
         let cfg_record: CfgRecordItem = serde_yaml::from_str(yaml).unwrap();
@@ -168,10 +204,13 @@ backends:
             Some("DNS Syncer, google dns".to_string())
         );
         assert_eq!(cfg_record.record.op, RecordOp::Create);
-        assert_eq!(cfg_record.backends.len(), 1);
-        assert_eq!(cfg_record.backends[0].provider, "cloudflare-1");
-        assert_eq!(cfg_record.backends[0].zones.len(), 1);
+        assert_eq!(cfg_record.providers.len(), 1);
+        assert_eq!(cfg_record.providers[0].name, "cloudflare-1");
+        assert_eq!(cfg_record.providers[0].zones.len(), 1);
+
         assert_eq!(cfg_record.record.ttl, TTL::Value(300));
+        assert_eq!(cfg_record.fetchers.len(), 1);
+        assert_eq!(cfg_record.fetchers[0].name, "http_fetcher-1");
     }
 
     #[test]
@@ -182,13 +221,15 @@ name: case1.dns-syncer-test
 proxied: true
 comment: 'DNS Syncer, google dns'
 op: create
-backends:
-- provider: "cloudflare-1"
+providers:
+- name: "cloudflare-1"
   params:
     - name: "proxied"
       value: "true"
   zones:
     - "example-au.org"
+fetchers:
+  - name: "http_fetcher-1"
 "#;
 
         let cfg_record: CfgRecordItem = serde_yaml::from_str(yaml).unwrap();
@@ -199,9 +240,11 @@ backends:
             Some("DNS Syncer, google dns".to_string())
         );
         assert_eq!(cfg_record.record.op, RecordOp::Create);
-        assert_eq!(cfg_record.backends.len(), 1);
-        assert_eq!(cfg_record.backends[0].provider, "cloudflare-1");
-        assert_eq!(cfg_record.backends[0].zones.len(), 1);
+        assert_eq!(cfg_record.providers.len(), 1);
+        assert_eq!(cfg_record.providers[0].name, "cloudflare-1");
+        assert_eq!(cfg_record.providers[0].zones.len(), 1);
         assert_eq!(cfg_record.record.ttl, TTL::Auto);
+        assert_eq!(cfg_record.fetchers.len(), 1);
+        assert_eq!(cfg_record.fetchers[0].name, "http_fetcher-1");
     }
 }

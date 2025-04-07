@@ -9,15 +9,16 @@ use crate::record::ZoneName;
 
 #[async_trait]
 pub trait Provider {
+    fn name(&self) -> &str;
     async fn sync(&self, records: BackendRecords, public_ip: PublicIp) -> Result<()>;
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct ZoneRecords {
     pub records: Vec<ProviderRecord>,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct BackendRecords {
     pub zones: HashMap<ZoneName, ZoneRecords>,
 }

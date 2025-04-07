@@ -1,4 +1,5 @@
 mod types;
 pub use types::*;
 
-pub mod cloudflare;
+mod cloudflare;
+pub use cloudflare::*;

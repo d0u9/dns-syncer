@@ -5,15 +5,17 @@ use crate::error::Error;
 use crate::error::Result;
 use crate::provider::BackendRecords;
 use crate::provider::Provider;
+use crate::provider::ZoneRecords;
 use crate::record::ProviderRecord;
 use crate::record::PublicIp;
 use crate::record::RecordContent;
+use crate::record::RecordOp;
 use crate::record::TTL;
 use crate::wrapper::http;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", content = "value")]
-pub(super) enum Auth {
+pub enum Auth {
     #[serde(alias = "api_token")]
     ApiToken(String),
 
@@ -21,20 +23,71 @@ pub(super) enum Auth {
     ApiKey { email: String, key: String },
 }
 
-struct Cloudflare {
-    authentication: Auth,
+pub struct Cloudflare {
+    name: String,
+    cli: Cli,
 }
 
 impl Cloudflare {
-    pub fn new(authentication: Auth) -> Self {
-        Self { authentication }
+    pub fn new(name: String, authentication: Auth) -> Self {
+        Self {
+            name,
+            cli: Cli::new(authentication),
+        }
+    }
+
+    async fn sync_zone(
+        &self,
+        zone: &CfZone,
+        records: &ZoneRecords,
+        public_ip: &PublicIp,
+    ) -> Result<()> {
+        for record in records.records.iter() {
+            // Ignore dns OP
+            let mut record = record.clone();
+            record.op = RecordOp::Purge;
+
+            if !record.name.ends_with(zone.name.as_str()) {
+                record.name = format!("{}.{}", record.name, zone.name);
+            }
+
+            if record.content.is_none() {
+                let (v4, v6) = public_ip.ips();
+                if let Some(ip) = v4 {
+                    record.content = RecordContent::A(ip);
+                } else if let Some(ip) = v6 {
+                    record.content = RecordContent::AAAA(ip);
+                }
+            }
+
+            dbg!(&record);
+            self.cli.record_op_purge(zone.id.as_str(), record).await?;
+        }
+
+        Ok(())
     }
 }
 
 #[async_trait]
 impl Provider for Cloudflare {
     async fn sync(&self, records: BackendRecords, public_ip: PublicIp) -> Result<()> {
+        for (zone_name, zone_records) in records.zones.iter() {
+            let zone_id = self.cli.zone_list(zone_name).await?;
+
+            if let None = zone_id {
+                println!("zone_id: {} not found", zone_name);
+                continue;
+            }
+
+            let zone = zone_id.unwrap();
+            println!("zone_id: {} {}", zone.id, zone.name);
+            self.sync_zone(&zone, zone_records, &public_ip).await?;
+        }
         Ok(())
+    }
+
+    fn name(&self) -> &str {
+        &self.name
     }
 }
 

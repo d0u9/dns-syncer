@@ -8,6 +8,7 @@ pub enum Error {
     ParseError(String),
     IoError(std::io::Error),
     GlobalFetcherError(String),
+    Provider(String),
     NotImplemente,
 }
 
@@ -20,6 +21,7 @@ impl fmt::Display for Error {
             Error::ParseError(e) => write!(f, "Parse error: {}", e),
             Error::IoError(e) => write!(f, "IO error: {}", e),
             Error::GlobalFetcherError(e) => write!(f, "Global fetcher error: {}", e),
+            Error::Provider(e) => write!(f, "Provider error: {}", e),
             Error::NotImplemente => write!(f, "Not implemented"),
         }
     }

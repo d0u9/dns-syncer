@@ -17,6 +17,10 @@ impl PublicIp {
     pub fn new(v4: Option<Ipv4Addr>, v6: Option<Ipv6Addr>) -> Self {
         Self { v4, v6 }
     }
+
+    pub fn ips(&self) -> (Option<Ipv4Addr>, Option<Ipv6Addr>) {
+        (self.v4, self.v6)
+    }
 }
 
 ////////////////////////////////////////////////////////////
@@ -111,6 +115,23 @@ impl FetcherRecordSet {
 
     pub fn push(&mut self, content: FetcherRecord) {
         self.contents.push(content);
+    }
+}
+
+impl From<FetcherRecordSet> for PublicIp {
+    fn from(set: FetcherRecordSet) -> Self {
+        let mut v4 = None;
+        let mut v6 = None;
+
+        for content in set.contents {
+            match content.value {
+                RecordContent::A(ip) => v4 = Some(ip),
+                RecordContent::AAAA(ip) => v6 = Some(ip),
+                _ => {}
+            }
+        }
+
+        Self::new(v4, v6)
     }
 }
 
