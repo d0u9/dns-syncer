@@ -33,7 +33,7 @@ pub struct CfgRecord {
 
 impl CfgRecord {
     pub fn or_content(mut self, content: RecordContent) -> Self {
-        if self.content.is_none() {
+        if self.content.is_unknown() {
             self.content = content;
         }
         self
@@ -234,7 +234,7 @@ fetchers:
 
         let cfg_record: CfgRecordItem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(cfg_record.record.name, "case1.dns-syncer-test");
-        assert_eq!(cfg_record.record.content, RecordContent::None);
+        assert_eq!(cfg_record.record.content, RecordContent::Unknown);
         assert_eq!(
             cfg_record.record.comment,
             Some("DNS Syncer, google dns".to_string())

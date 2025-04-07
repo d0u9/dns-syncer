@@ -26,7 +26,12 @@ impl Serialize for RecordContent {
                 state.serialize_field("content", &cname.to_string())?;
                 state.end()
             }
-            RecordContent::None => serializer.serialize_unit(),
+            RecordContent::Unassigned(unassigned) => {
+                let mut state = serializer.serialize_struct("RecordUnassigned", 2)?;
+                state.serialize_field("type", unassigned.as_str())?;
+                state.end()
+            }
+            RecordContent::Unknown => serializer.serialize_unit(),
         }
     }
 }
@@ -34,11 +39,16 @@ impl Serialize for RecordContent {
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::record::RecordType;
     use std::net::Ipv4Addr;
 
     #[test]
     fn test_serialize_record_content() {
         let record_content = RecordContent::A(Ipv4Addr::new(192, 168, 1, 1));
+        let serialized = serde_json::to_string(&record_content).unwrap();
+        println!("{}", serialized);
+
+        let record_content = RecordContent::Unassigned(RecordType::A);
         let serialized = serde_json::to_string(&record_content).unwrap();
         println!("{}", serialized);
     }

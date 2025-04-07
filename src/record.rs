@@ -35,11 +35,31 @@ pub struct RecordLabel {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum RecordType {
+    A,
+    AAAA,
+    CNAME,
+    None,
+}
+
+impl RecordType {
+    pub fn as_str(&self) -> &str {
+        match self {
+            RecordType::A => "A",
+            RecordType::AAAA => "AAAA",
+            RecordType::CNAME => "CNAME",
+            RecordType::None => "None",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum RecordContent {
     A(Ipv4Addr),
     AAAA(Ipv6Addr),
     CNAME(String),
-    None,
+    Unassigned(RecordType),
+    Unknown,
 }
 
 impl<'de> Deserialize<'de> for RecordContent {
@@ -57,23 +77,34 @@ impl<'de> Deserialize<'de> for RecordContent {
         let helper = RecordContentHelper::deserialize(deserializer)?;
 
         match (helper.ty.as_deref(), helper.content) {
+            (Some("a" | "A"), None) => Ok(RecordContent::Unassigned(RecordType::A)),
             (Some("a" | "A"), Some(content)) => {
                 let v4: Ipv4Addr = content.parse().map_err(serde::de::Error::custom)?;
                 Ok(RecordContent::A(v4))
             }
+            (Some("aaaa" | "AAAA"), None) => Ok(RecordContent::Unassigned(RecordType::AAAA)),
             (Some("aaaa" | "AAAA"), Some(content)) => {
                 let v6: Ipv6Addr = content.parse().map_err(serde::de::Error::custom)?;
                 Ok(RecordContent::AAAA(v6))
             }
+            (Some("cname" | "CNAME"), None) => Ok(RecordContent::Unassigned(RecordType::CNAME)),
             (Some("cname" | "CNAME"), Some(content)) => Ok(RecordContent::CNAME(content)),
-            _ => Ok(RecordContent::None),
+            (Some(ty), _) => Err(serde::de::Error::custom(format!(
+                "Unknown record type: {}",
+                ty
+            ))),
+            (None, _) => Err(serde::de::Error::custom("have to give a type for record")),
         }
     }
 }
 
 impl RecordContent {
-    pub fn is_none(&self) -> bool {
-        matches!(self, RecordContent::None)
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, RecordContent::Unknown)
+    }
+
+    pub fn is_unassigned(&self) -> bool {
+        matches!(self, RecordContent::Unassigned(_))
     }
 }
 

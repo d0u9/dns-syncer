@@ -5,6 +5,7 @@ use crate::record::ProviderParam;
 use crate::record::ProviderRecord;
 use crate::record::RecordContent;
 use crate::record::RecordOp;
+use crate::record::RecordType;
 use crate::record::TTL;
 
 #[tokio::test]
@@ -101,6 +102,48 @@ fn test_cf_record_deserialize() {
     );
     assert_eq!(record.proxied, true);
     println!("{:?}", record);
+}
+
+#[test]
+fn test_cf_record_deserialize_unassigned() {
+    let json = r#"{
+        "comment": "hello",
+        "created_on": "2022-06-08T02:19:45.956932Z",
+        "id": "79de548c4af681c2af1a9e92be42d004",
+        "meta": {},
+        "modified_on": "2022-06-08T02:19:45.956932Z",
+        "name": "cn.d0u9.top",
+        "proxiable": true,
+        "proxied": true,
+        "settings": {},
+        "tags": [],
+        "ttl": 1,
+        "type": "A"
+    }"#;
+    let record: CfRecord = serde_json::from_str(json).unwrap();
+    assert_eq!(record.comment, Some("hello".to_string()));
+    assert_eq!(record.content, RecordContent::Unassigned(RecordType::A));
+    assert_eq!(record.proxied, true);
+    println!("{:?}", record);
+}
+
+#[test]
+fn test_cf_record_deserialize_unknown() {
+    let json = r#"{
+        "comment": "hello",
+        "created_on": "2022-06-08T02:19:45.956932Z",
+        "id": "79de548c4af681c2af1a9e92be42d004",
+        "meta": {},
+        "modified_on": "2022-06-08T02:19:45.956932Z",
+        "name": "cn.d0u9.top",
+        "proxiable": true,
+        "proxied": true,
+        "settings": {},
+        "tags": [],
+        "ttl": 1
+    }"#;
+    let record = serde_json::from_str::<CfRecord>(json);
+    assert!(record.is_err());
 }
 
 #[test]
