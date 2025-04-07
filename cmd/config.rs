@@ -32,13 +32,6 @@ pub struct CfgRecord {
 }
 
 impl CfgRecord {
-    pub fn or_content(mut self, content: RecordContent) -> Self {
-        if self.content.is_unknown() {
-            self.content = content;
-        }
-        self
-    }
-
     pub fn into_provider_record(self, params: &Vec<CfgRecordParam>) -> ProviderRecord {
         ProviderRecord {
             name: self.name,
@@ -65,7 +58,7 @@ pub struct CfgRecordItem {
     pub providers: Vec<CfgRecordProvider>,
 
     #[serde(default)]
-    pub fetchers: Vec<CfgRecordFetcher>,
+    pub _fetchers: Vec<CfgRecordFetcher>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -76,7 +69,7 @@ pub struct CfgRecordParam {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfgRecordFetcher {
-    pub name: String,
+    pub _name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -133,16 +126,16 @@ pub struct CfgProvider {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfgFetcher {
-    pub name: String,
-    pub r#type: String,
-    pub alive: u64,
+    pub _name: String,
+    pub _type: String,
+    pub _alive: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Cfg {
-    pub check_interval: u64,
+    pub _check_interval: u64,
     pub providers: Vec<CfgProvider>,
-    pub fetchers: Vec<CfgFetcher>,
+    pub _fetchers: Vec<CfgFetcher>,
     pub records: Vec<CfgRecordItem>,
 }
 
@@ -209,8 +202,8 @@ fetchers:
         assert_eq!(cfg_record.providers[0].zones.len(), 1);
 
         assert_eq!(cfg_record.record.ttl, TTL::Value(300));
-        assert_eq!(cfg_record.fetchers.len(), 1);
-        assert_eq!(cfg_record.fetchers[0].name, "http_fetcher-1");
+        assert_eq!(cfg_record._fetchers.len(), 1);
+        assert_eq!(cfg_record._fetchers[0]._name, "http_fetcher-1");
     }
 
     #[test]
@@ -244,7 +237,7 @@ fetchers:
         assert_eq!(cfg_record.providers[0].name, "cloudflare-1");
         assert_eq!(cfg_record.providers[0].zones.len(), 1);
         assert_eq!(cfg_record.record.ttl, TTL::Auto);
-        assert_eq!(cfg_record.fetchers.len(), 1);
-        assert_eq!(cfg_record.fetchers[0].name, "http_fetcher-1");
+        assert_eq!(cfg_record._fetchers.len(), 1);
+        assert_eq!(cfg_record._fetchers[0]._name, "http_fetcher-1");
     }
 }

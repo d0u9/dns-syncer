@@ -44,7 +44,7 @@ async fn test_cf_record_op_create() {
 
     let cli = init_cli();
     println!("{:?}", CfRecord::from(record.clone()));
-    let _resp = cli.record_op_create(&zone_id, record).await.unwrap();
+    let _resp = cli._record_op_create(&zone_id, record).await.unwrap();
 }
 
 #[tokio::test]
@@ -60,7 +60,7 @@ async fn test_cf_records_list_by_name() {
 async fn test_cf_records_list() {
     let cli = init_cli();
     let (_name, id) = zone_name();
-    let records = cli.records_list(&id).await.unwrap();
+    let records = cli._records_list(&id).await.unwrap();
     println!("{:?}", records);
 }
 

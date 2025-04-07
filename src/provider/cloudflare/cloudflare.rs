@@ -167,11 +167,11 @@ impl Cli {
         Ok(resp)
     }
 
-    async fn put(&self) -> Result<String> {
+    async fn _put(&self) -> Result<String> {
         Err(Error::NotImplemente)
     }
 
-    async fn delete(&self) -> Result<String> {
+    async fn _delete(&self) -> Result<String> {
         Err(Error::NotImplemente)
     }
 }
@@ -252,7 +252,7 @@ impl From<ProviderRecord> for CfRecord {
 
 // Cloudflare record API
 impl Cli {
-    pub async fn records_list(&self, zone_id: &str) -> Result<Vec<CfRecord>> {
+    pub async fn _records_list(&self, zone_id: &str) -> Result<Vec<CfRecord>> {
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/dns_records",
             zone_id
@@ -291,7 +291,7 @@ struct BatchRecord {
 }
 
 impl Cli {
-    pub async fn record_op_create(&self, zone_id: &str, record: ProviderRecord) -> Result<()> {
+    pub async fn _record_op_create(&self, zone_id: &str, record: ProviderRecord) -> Result<()> {
         let url = format!(
             "https://api.cloudflare.com/client/v4/zones/{}/dns_records",
             zone_id
