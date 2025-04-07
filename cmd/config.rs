@@ -125,17 +125,19 @@ pub struct CfgProvider {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct CfgFetcher {
-    pub _name: String,
-    pub _type: String,
-    pub _alive: u64,
+    pub name: String,
+    pub r#type: String,
+    pub alive: u64,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct Cfg {
-    pub _check_interval: u64,
+    pub check_interval: u64,
+    pub fetchers: Vec<CfgFetcher>,
     pub providers: Vec<CfgProvider>,
-    pub _fetchers: Vec<CfgFetcher>,
     pub records: Vec<CfgRecordItem>,
 }
 

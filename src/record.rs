@@ -4,6 +4,9 @@ use std::net::Ipv6Addr;
 use serde::Deserialize;
 use serde::Deserializer;
 
+use crate::error::Error;
+use crate::error::Result;
+
 ////////////////////////////////////////////////////////////
 // Public IP
 ////////////////////////////////////////////////////////////
@@ -62,8 +65,18 @@ pub enum RecordContent {
     Unknown,
 }
 
+impl RecordContent {
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, RecordContent::Unknown)
+    }
+
+    pub fn is_unassigned(&self) -> bool {
+        matches!(self, RecordContent::Unassigned(_))
+    }
+}
+
 impl<'de> Deserialize<'de> for RecordContent {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: serde::Deserializer<'de>,
     {
@@ -95,16 +108,6 @@ impl<'de> Deserialize<'de> for RecordContent {
             ))),
             (None, _) => Err(serde::de::Error::custom("have to give a type for record")),
         }
-    }
-}
-
-impl RecordContent {
-    pub fn is_unknown(&self) -> bool {
-        matches!(self, RecordContent::Unknown)
-    }
-
-    pub fn is_unassigned(&self) -> bool {
-        matches!(self, RecordContent::Unassigned(_))
     }
 }
 
@@ -182,7 +185,7 @@ impl Default for TTL {
 }
 
 impl<'de> Deserialize<'de> for TTL {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -224,4 +227,30 @@ pub struct ProviderRecord {
     pub ttl: TTL,
 
     pub params: Vec<ProviderParam>,
+}
+
+impl ProviderRecord {
+    pub fn assign_public_ip_if_unassigned(&mut self, v4: Option<Ipv4Addr>, v6: Option<Ipv6Addr>) -> Result<()> {
+        match (&self.content, (v4, v6)) {
+            (RecordContent::Unassigned(RecordType::A), (Some(v4), _)) => {
+                self.content = RecordContent::A(v4)
+            }
+            (RecordContent::Unassigned(RecordType::AAAA), (_, Some(v6))) => {
+                self.content = RecordContent::AAAA(v6)
+            }
+            (RecordContent::Unassigned(ty), (_, _)) => {
+                return Err(Error::Provider(format!(
+                    "content is declared as {} but neither v4 nor v6 is provided",
+                    ty.as_str()
+                )));
+            }
+            _ => {
+                return Err(Error::Provider(format!(
+                    "content should be have a type like A or AAAA, but it is not. Maybe a bug?",
+                )));
+            }
+        }
+
+        Ok(())
+    }
 }

@@ -10,7 +10,6 @@ use crate::record::ProviderRecord;
 use crate::record::PublicIp;
 use crate::record::RecordContent;
 use crate::record::RecordOp;
-use crate::record::RecordType;
 use crate::record::TTL;
 use crate::wrapper::http;
 
@@ -52,29 +51,10 @@ impl Cloudflare {
                 record.name = format!("{}.{}", record.name, zone.name);
             }
 
-            if record.content.is_unassigned() {
-                let (v4, v6) = public_ip.ips();
-
-                match (record.content.clone(), (v4, v6)) {
-                    (RecordContent::Unassigned(RecordType::A), (Some(v4), _)) => {
-                        record.content = RecordContent::A(v4)
-                    }
-                    (RecordContent::Unassigned(RecordType::A), (None, _)) => {
-                        println!("no public v4 ip for {}", record.name);
-                        continue;
-                    }
-                    (RecordContent::Unassigned(RecordType::AAAA), (_, Some(v6))) => {
-                        record.content = RecordContent::AAAA(v6)
-                    }
-                    (RecordContent::Unassigned(RecordType::AAAA), (_, None)) => {
-                        println!("no public v6 ip for {}", record.name);
-                        continue;
-                    }
-                    _ => {
-                        println!("unknown record content for {}", record.name);
-                        continue;
-                    }
-                }
+            let (v4, v6) = public_ip.ips();
+            if let Err(e) = record.assign_public_ip_if_unassigned(v4, v6) {
+                log::error!("{}", e);
+                continue;
             }
 
             if record.content.is_unknown() {

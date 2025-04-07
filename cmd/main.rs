@@ -25,9 +25,9 @@ async fn main() {
 
     let config = config::Parser::parse_yaml(&args.config).unwrap();
     let config::Cfg {
-        _check_interval: _,
+        check_interval: _,
         providers,
-        _fetchers: _,
+        fetchers: _,
         records,
     } = config;
 
