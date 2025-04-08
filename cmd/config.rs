@@ -32,7 +32,7 @@ pub struct CfgRecord {
 }
 
 impl CfgRecord {
-    pub fn into_provider_record(self, params: &Vec<CfgRecordParam>) -> ProviderRecord {
+    pub fn into_provider_record(self, params: &CfgParamList) -> ProviderRecord {
         ProviderRecord {
             name: self.name,
             content: self.content,
@@ -50,6 +50,45 @@ impl CfgRecord {
     }
 }
 
+////////////////////////////////////////////////////////////
+// Parameters
+////////////////////////////////////////////////////////////
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfgParam {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct CfgParamList {
+    #[serde(default)]
+    pub list: Vec<CfgParam>,
+}
+
+impl CfgParamList {
+    pub fn iter(&self) -> impl Iterator<Item = &CfgParam> {
+        self.list.iter()
+    }
+}
+
+impl IntoIterator for CfgParamList {
+    type Item = CfgParam;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.list.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a CfgParamList {
+    type Item = &'a CfgParam;
+    type IntoIter = std::slice::Iter<'a, CfgParam>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.list.iter()
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfgRecordItem {
     #[serde(flatten)]
@@ -58,18 +97,12 @@ pub struct CfgRecordItem {
     pub providers: Vec<CfgRecordProvider>,
 
     #[serde(default)]
-    pub _fetchers: Vec<CfgRecordFetcher>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CfgRecordParam {
-    pub name: String,
-    pub value: String,
+    pub fetchers: Vec<CfgRecordFetcher>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfgRecordFetcher {
-    pub _name: String,
+    pub name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -77,27 +110,21 @@ pub struct CfgRecordProvider {
     pub name: String,
     pub zones: Vec<ZoneName>,
 
-    #[serde(default)]
-    pub params: Vec<CfgRecordParam>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct CfgProviderAuthenticationParams {
-    pub key: String,
-    pub value: String,
+    #[serde(flatten)]
+    pub params: CfgParamList,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfgProviderAuthentication {
     pub method: String,
-    pub params: Vec<CfgProviderAuthenticationParams>,
+    pub params: CfgParamList,
 }
 
 impl CfgProviderAuthentication {
     pub fn get_value_ref(&self, key: &str) -> Option<&str> {
         self.params
             .iter()
-            .find(|p| p.key == key)
+            .find(|p| p.name == key)
             .map(|p| p.value.as_str())
     }
 }
@@ -185,6 +212,8 @@ mod unit_test {
     use super::*;
     use std::net::Ipv4Addr;
 
+    use dns_syncer::record::RecordType;
+
     #[test]
     fn test_record_cfg_deserialize_with_sync_to() {
         let yaml = r#"
@@ -222,8 +251,8 @@ fetchers:
         assert_eq!(cfg_record.providers[0].zones.len(), 1);
 
         assert_eq!(cfg_record.record.ttl, TTL::Value(300));
-        assert_eq!(cfg_record._fetchers.len(), 1);
-        assert_eq!(cfg_record._fetchers[0]._name, "http_fetcher-1");
+        assert_eq!(cfg_record.fetchers.len(), 1);
+        assert_eq!(cfg_record.fetchers[0].name, "http_fetcher-1");
     }
 
     #[test]
@@ -247,7 +276,7 @@ fetchers:
 
         let cfg_record: CfgRecordItem = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(cfg_record.record.name, "case1.dns-syncer-test");
-        assert_eq!(cfg_record.record.content, RecordContent::Unknown);
+        assert_eq!(cfg_record.record.content, RecordContent::Unassigned(RecordType::A));
         assert_eq!(
             cfg_record.record.comment,
             Some("DNS Syncer, google dns".to_string())
@@ -257,7 +286,7 @@ fetchers:
         assert_eq!(cfg_record.providers[0].name, "cloudflare-1");
         assert_eq!(cfg_record.providers[0].zones.len(), 1);
         assert_eq!(cfg_record.record.ttl, TTL::Auto);
-        assert_eq!(cfg_record._fetchers.len(), 1);
-        assert_eq!(cfg_record._fetchers[0]._name, "http_fetcher-1");
+        assert_eq!(cfg_record.fetchers.len(), 1);
+        assert_eq!(cfg_record.fetchers[0].name, "http_fetcher-1");
     }
 }

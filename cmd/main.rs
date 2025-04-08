@@ -119,7 +119,7 @@ fn add_zone_record(
     backend_records: &mut BackendRecords,
     zone: ZoneName,
     record: &config::CfgRecord,
-    params: &Vec<config::CfgRecordParam>,
+    params: &config::CfgParamList,
 ) {
     let zone_records = backend_records
         .zones
