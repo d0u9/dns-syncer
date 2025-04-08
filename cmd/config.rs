@@ -14,6 +14,57 @@ use dns_syncer::record::RecordOp;
 use dns_syncer::record::TTL;
 use dns_syncer::record::ZoneName;
 
+////////////////////////////////////////////////////////////
+// Parameters
+////////////////////////////////////////////////////////////
+#[derive(Debug, Clone, Deserialize)]
+pub struct CfgParam {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct CfgParamList(Vec<CfgParam>);
+
+impl CfgParamList {
+    pub fn iter(&self) -> impl Iterator<Item = &CfgParam> {
+        self.0.iter()
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl std::ops::Index<usize> for CfgParamList {
+    type Output = CfgParam;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.0[index]
+    }
+}
+
+impl IntoIterator for CfgParamList {
+    type Item = CfgParam;
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a CfgParamList {
+    type Item = &'a CfgParam;
+    type IntoIter = std::slice::Iter<'a, CfgParam>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
+////////////////////////////////////////////////////////////
+// Record
+////////////////////////////////////////////////////////////
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfgRecord {
     pub name: String,
@@ -50,45 +101,6 @@ impl CfgRecord {
     }
 }
 
-////////////////////////////////////////////////////////////
-// Parameters
-////////////////////////////////////////////////////////////
-#[derive(Debug, Clone, Deserialize)]
-pub struct CfgParam {
-    pub name: String,
-    pub value: String,
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct CfgParamList {
-    #[serde(default)]
-    pub list: Vec<CfgParam>,
-}
-
-impl CfgParamList {
-    pub fn iter(&self) -> impl Iterator<Item = &CfgParam> {
-        self.list.iter()
-    }
-}
-
-impl IntoIterator for CfgParamList {
-    type Item = CfgParam;
-    type IntoIter = std::vec::IntoIter<Self::Item>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.list.into_iter()
-    }
-}
-
-impl<'a> IntoIterator for &'a CfgParamList {
-    type Item = &'a CfgParam;
-    type IntoIter = std::slice::Iter<'a, CfgParam>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.list.iter()
-    }
-}
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfgRecordItem {
     #[serde(flatten)]
@@ -109,11 +121,12 @@ pub struct CfgRecordFetcher {
 pub struct CfgRecordProvider {
     pub name: String,
     pub zones: Vec<ZoneName>,
-
-    #[serde(flatten)]
     pub params: CfgParamList,
 }
 
+////////////////////////////////////////////////////////////
+// Provider
+////////////////////////////////////////////////////////////
 #[derive(Debug, Clone, Deserialize)]
 pub struct CfgProviderAuthentication {
     pub method: String,
@@ -169,14 +182,20 @@ pub struct CfgProvider {
     pub authentication: CfgProviderAuthentication,
 }
 
+////////////////////////////////////////////////////////////
+// Fetcher
+////////////////////////////////////////////////////////////
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct CfgFetcher {
     pub name: String,
     pub r#type: String,
-    pub alive: u64,
+    pub params: CfgParamList,
 }
 
+////////////////////////////////////////////////////////////
+// Yaml parser
+////////////////////////////////////////////////////////////
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct Cfg {
@@ -186,9 +205,6 @@ pub struct Cfg {
     pub records: Vec<CfgRecordItem>,
 }
 
-////////////////////////////////////////////////////////////
-// Yaml parser
-////////////////////////////////////////////////////////////
 pub struct Parser;
 
 impl Parser {
@@ -208,85 +224,5 @@ impl Parser {
 // Unit test
 ////////////////////////////////////////////////////////////
 #[cfg(test)]
-mod unit_test {
-    use super::*;
-    use std::net::Ipv4Addr;
-
-    use dns_syncer::record::RecordType;
-
-    #[test]
-    fn test_record_cfg_deserialize_with_sync_to() {
-        let yaml = r#"
-type: A
-name: case1.dns-syncer-test
-proxied: true
-content: 8.8.8.8
-comment: 'DNS Syncer, google dns'
-ttl: 300
-op: create
-providers:
-- name: "cloudflare-1"
-  params:
-    - name: "proxied"
-      value: "true"
-  zones:
-    - "example-au.org"
-fetchers:
-  - name: "http_fetcher-1"
-"#;
-
-        let cfg_record: CfgRecordItem = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(cfg_record.record.name, "case1.dns-syncer-test");
-        assert_eq!(
-            cfg_record.record.content,
-            RecordContent::A(Ipv4Addr::new(8, 8, 8, 8))
-        );
-        assert_eq!(
-            cfg_record.record.comment,
-            Some("DNS Syncer, google dns".to_string())
-        );
-        assert_eq!(cfg_record.record.op, RecordOp::Create);
-        assert_eq!(cfg_record.providers.len(), 1);
-        assert_eq!(cfg_record.providers[0].name, "cloudflare-1");
-        assert_eq!(cfg_record.providers[0].zones.len(), 1);
-
-        assert_eq!(cfg_record.record.ttl, TTL::Value(300));
-        assert_eq!(cfg_record.fetchers.len(), 1);
-        assert_eq!(cfg_record.fetchers[0].name, "http_fetcher-1");
-    }
-
-    #[test]
-    fn test_record_cfg_deserialize_without_content() {
-        let yaml = r#"
-type: A
-name: case1.dns-syncer-test
-proxied: true
-comment: 'DNS Syncer, google dns'
-op: create
-providers:
-- name: "cloudflare-1"
-  params:
-    - name: "proxied"
-      value: "true"
-  zones:
-    - "example-au.org"
-fetchers:
-  - name: "http_fetcher-1"
-"#;
-
-        let cfg_record: CfgRecordItem = serde_yaml::from_str(yaml).unwrap();
-        assert_eq!(cfg_record.record.name, "case1.dns-syncer-test");
-        assert_eq!(cfg_record.record.content, RecordContent::Unassigned(RecordType::A));
-        assert_eq!(
-            cfg_record.record.comment,
-            Some("DNS Syncer, google dns".to_string())
-        );
-        assert_eq!(cfg_record.record.op, RecordOp::Create);
-        assert_eq!(cfg_record.providers.len(), 1);
-        assert_eq!(cfg_record.providers[0].name, "cloudflare-1");
-        assert_eq!(cfg_record.providers[0].zones.len(), 1);
-        assert_eq!(cfg_record.record.ttl, TTL::Auto);
-        assert_eq!(cfg_record.fetchers.len(), 1);
-        assert_eq!(cfg_record.fetchers[0].name, "http_fetcher-1");
-    }
-}
+#[path = "config_test.rs"]
+mod test;
