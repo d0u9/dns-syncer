@@ -25,23 +25,38 @@ impl Fetcher for HttpFetcher {
     }
 }
 
-struct CloudflareFetcher;
+#[async_trait]
+trait HttpFetcherBackend {
+    fn v4_url<'a>() -> &'a str;
+    fn v6_url<'a>() -> &'a str;
+    fn parse_content<T: AsRef<str>>(content: T) -> Result<String>;
 
-impl CloudflareFetcher {
-    pub async fn fetch_v4() -> Result<FetcherRecord> {
-        let url = "https://1.1.1.1/cdn-cgi/trace";
+    async fn fetch_v4() -> Result<FetcherRecord> {
+        let url = Self::v4_url();
         let body = http::get_body_v4(url).await?;
         let ip = Self::parse_content(body)?;
         let record = FetcherRecord::new_v4(ip.parse()?);
         Ok(record)
     }
 
-    pub async fn fetch_v6() -> Result<FetcherRecord> {
-        let url = "https://[2606:4700:4700::1111]/cdn-cgi/trace";
+    async fn fetch_v6() -> Result<FetcherRecord> {
+        let url = Self::v6_url();
         let body = http::get_body_v6(url).await?;
         let ip = Self::parse_content(body)?;
         let record = FetcherRecord::new_v6(ip.parse()?);
         Ok(record)
+    }
+}
+
+struct CloudflareFetcher;
+
+impl HttpFetcherBackend for CloudflareFetcher {
+    fn v4_url<'a>() -> &'a str {
+        "https://1.1.1.1/cdn-cgi/trace"
+    }
+
+    fn v6_url<'a>() -> &'a str {
+        "https://[2606:4700:4700::1111]/cdn-cgi/trace"
     }
 
     fn parse_content<T: AsRef<str>>(content: T) -> Result<String> {
@@ -69,24 +84,23 @@ impl CloudflareFetcher {
 }
 
 #[cfg(test)]
-mod tests {
+mod cloudflare_fetcher_tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_cloudflare_fetcher() {
+    async fn test_fetcher_v4() {
         let ip = CloudflareFetcher::fetch_v4().await.unwrap();
         println!("{:?}", ip);
     }
 
     #[tokio::test]
-    async fn test_http_fetcher() {
-        let fetcher = HttpFetcher;
-        let records = fetcher.fetch().await.unwrap();
-        println!("{:?}", records);
+    async fn test_fetcher_v6() {
+        let ip = CloudflareFetcher::fetch_v6().await.unwrap();
+        println!("{:?}", ip);
     }
 
     #[test]
-    fn test_cloudflare_fetcher_parse_v4_content() {
+    fn test_fetcher_parse_v4_content() {
         let content = r#"
 fl=490f68
 h=1.1.1.1
@@ -109,7 +123,7 @@ kex=P-256"#;
     }
 
     #[tokio::test]
-    async fn test_cloudflare_fetcher_parse_v6_content() {
+    async fn test_fetcher_parse_v6_content() {
         let content = r#"
 fl=465f162
 h=[2606:3007:4007::1111]
@@ -133,6 +147,36 @@ kex=X25519
     }
 }
 
-struct IfconfigMeFetcher;
+struct IpwFetcher;
 
-impl IfconfigMeFetcher {}
+impl HttpFetcherBackend for IpwFetcher {
+    fn v4_url<'a>() -> &'a str {
+        "http://4.ipw.cn"
+    }
+
+    fn v6_url<'a>() -> &'a str {
+        "http://6.ipw.cn"
+    }
+
+    fn parse_content<T: AsRef<str>>(content: T) -> Result<String> {
+        let content = content.as_ref();
+        Ok(content.to_string())
+    }
+}
+
+#[cfg(test)]
+mod ipw_fetcher_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetcher_v4() {
+        let ip = IpwFetcher::fetch_v4().await.unwrap();
+        println!("{:?}", ip);
+    }
+
+    #[tokio::test]
+    async fn test_fetcher_v6() {
+        let ip = IpwFetcher::fetch_v6().await.unwrap();
+        println!("{:?}", ip);
+    }
+}
