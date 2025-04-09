@@ -6,14 +6,40 @@ use crate::wrapper::http;
 use super::Fetcher;
 use crate::record::FetcherRecord;
 use crate::record::FetcherRecordSet;
+use crate::record::RecordLabel;
 
-#[derive(Debug, Clone, Default)]
-pub struct HttpFetcher;
+#[derive(Clone)]
+enum FetcherBackend {
+    Cloudflare,
+    Ipw,
+}
+
+#[derive(Clone, Default)]
+pub struct HttpFetcher {
+    backends: Vec<FetcherBackend>,
+}
 
 impl HttpFetcher {
+    pub fn new() -> Self {
+        Self {
+            backends: vec![FetcherBackend::Cloudflare, FetcherBackend::Ipw],
+        }
+    }
+
     pub async fn fetch(&self) -> Result<FetcherRecordSet> {
         let mut ret = FetcherRecordSet::default();
-        ret.push(CloudflareFetcher::fetch_v4().await?);
+        for backend in self.backends.iter() {
+            match backend {
+                FetcherBackend::Cloudflare => {
+                    ret.push(CloudflareFetcher::fetch_v4().await?);
+                    ret.push(CloudflareFetcher::fetch_v6().await?);
+                }
+                FetcherBackend::Ipw => {
+                    ret.push(IpwFetcher::fetch_v4().await?);
+                    ret.push(IpwFetcher::fetch_v6().await?);
+                }
+            }
+        }
         Ok(ret)
     }
 }
@@ -29,22 +55,34 @@ impl Fetcher for HttpFetcher {
 trait HttpFetcherBackend {
     fn v4_url<'a>() -> &'a str;
     fn v6_url<'a>() -> &'a str;
-    fn parse_content<T: AsRef<str>>(content: T) -> Result<String>;
+    fn parse_content<T: AsRef<str>>(content: T) -> Result<(String, Vec<RecordLabel>)>;
 
     async fn fetch_v4() -> Result<FetcherRecord> {
         let url = Self::v4_url();
         let body = http::get_body_v4(url).await?;
-        let ip = Self::parse_content(body)?;
-        let record = FetcherRecord::new_v4(ip.parse()?);
+        let (ip, labels) = Self::parse_content(body)?;
+        let record = FetcherRecord::new_v4_with_labels(ip.parse()?, labels);
         Ok(record)
     }
 
     async fn fetch_v6() -> Result<FetcherRecord> {
         let url = Self::v6_url();
         let body = http::get_body_v6(url).await?;
-        let ip = Self::parse_content(body)?;
-        let record = FetcherRecord::new_v6(ip.parse()?);
+        let (ip, labels) = Self::parse_content(body)?;
+        let record = FetcherRecord::new_v6_with_labels(ip.parse()?, labels);
         Ok(record)
+    }
+}
+
+#[cfg(test)]
+mod http_fetcher_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_fetcher() {
+        let fetcher = HttpFetcher::new();
+        let records = fetcher.fetch().await.unwrap();
+        dbg!(&records);
     }
 }
 
@@ -59,7 +97,7 @@ impl HttpFetcherBackend for CloudflareFetcher {
         "https://[2606:4700:4700::1111]/cdn-cgi/trace"
     }
 
-    fn parse_content<T: AsRef<str>>(content: T) -> Result<String> {
+    fn parse_content<T: AsRef<str>>(content: T) -> Result<(String, Vec<RecordLabel>)> {
         let content = content.as_ref();
         let ip = content
             .lines()
@@ -79,7 +117,11 @@ impl HttpFetcherBackend for CloudflareFetcher {
                     }
                 },
             )?;
-        Ok(ip.to_string())
+        let labels = vec![RecordLabel::new(
+            String::from("backend"),
+            String::from("cloudflare"),
+        )];
+        Ok((ip.to_string(), labels))
     }
 }
 
@@ -118,8 +160,9 @@ warp=off
 gateway=off
 rbi=off
 kex=P-256"#;
-        let ip = CloudflareFetcher::parse_content(content).unwrap();
+        let (ip, labels) = CloudflareFetcher::parse_content(content).unwrap();
         assert_eq!(ip, "155.156.157.158");
+        assert_eq!(labels.len(), 1);
     }
 
     #[tokio::test]
@@ -142,8 +185,9 @@ gateway=off
 rbi=off
 kex=X25519
     "#;
-        let ip = CloudflareFetcher::parse_content(content).unwrap();
+        let (ip, labels) = CloudflareFetcher::parse_content(content).unwrap();
         assert_eq!(ip, "2604:5006:8:1d0::4b:d000");
+        assert_eq!(labels.len(), 1);
     }
 }
 
@@ -158,9 +202,13 @@ impl HttpFetcherBackend for IpwFetcher {
         "http://6.ipw.cn"
     }
 
-    fn parse_content<T: AsRef<str>>(content: T) -> Result<String> {
+    fn parse_content<T: AsRef<str>>(content: T) -> Result<(String, Vec<RecordLabel>)> {
         let content = content.as_ref();
-        Ok(content.to_string())
+        let labels = vec![RecordLabel::new(
+            String::from("backend"),
+            String::from("ipw"),
+        )];
+        Ok((content.to_string(), labels))
     }
 }
 

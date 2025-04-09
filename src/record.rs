@@ -37,6 +37,12 @@ pub struct RecordLabel {
     val: String,
 }
 
+impl RecordLabel {
+    pub fn new(key: String, val: String) -> Self {
+        Self { key, val }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum RecordType {
     A,
@@ -125,17 +131,17 @@ impl FetcherRecord {
         }
     }
 
-    pub fn new_v4(value: Ipv4Addr) -> Self {
+    pub fn new_v4_with_labels(value: Ipv4Addr, labels: Vec<RecordLabel>) -> Self {
         Self {
             value: RecordContent::A(value),
-            labels: vec![],
+            labels,
         }
     }
 
-    pub fn new_v6(value: Ipv6Addr) -> Self {
+    pub fn new_v6_with_labels(value: Ipv6Addr, labels: Vec<RecordLabel>) -> Self {
         Self {
             value: RecordContent::AAAA(value),
-            labels: vec![],
+            labels,
         }
     }
 }
