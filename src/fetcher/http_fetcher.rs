@@ -26,6 +26,47 @@ impl HttpFetcher {
         }
     }
 
+    pub fn new_with_args(args: Vec<(String, String)>) -> Self {
+        if args.is_empty() {
+            return Self::new();
+        }
+
+        let enabled_backends = args
+            .iter()
+            .filter_map(|(key, val)| {
+                if key == "enabled" {
+                    Some(val.split(',').collect::<Vec<&str>>())
+                } else {
+                    None
+                }
+            })
+            .next()
+            .unwrap_or_else(|| Self::default_backends());
+
+        let mut backends = Vec::new();
+        for backend in enabled_backends {
+            match backend {
+                "cloudflare" => backends.push(FetcherBackend::Cloudflare),
+                "ipw" => backends.push(FetcherBackend::Ipw),
+                _ => continue,
+            }
+        }
+
+        if backends.is_empty() {
+            log::warn!(
+                "no enabled backends, use default backends: {:?}",
+                Self::default_backends()
+            );
+            Self::new()
+        } else {
+            Self { backends }
+        }
+    }
+
+    fn default_backends() -> Vec<&'static str> {
+        vec!["cloudflare", "ipw"]
+    }
+
     pub async fn fetch(&self) -> Result<FetcherRecordSet> {
         let mut ret = FetcherRecordSet::default();
         for backend in self.backends.iter() {
