@@ -131,6 +131,13 @@ impl FetcherRecord {
             labels: vec![],
         }
     }
+
+    pub fn new_v6(value: Ipv6Addr) -> Self {
+        Self {
+            value: RecordContent::AAAA(value),
+            labels: vec![],
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, PartialEq)]

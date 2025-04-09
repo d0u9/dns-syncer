@@ -1,3 +1,5 @@
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
 use crate::error::{Error, Result};
 
 #[derive(Debug, Clone)]
@@ -113,11 +115,40 @@ impl Client {
     }
 }
 
-// A simple wrapper for reqwest::get
-pub async fn get(url: &str) -> Result<Response> {
+pub async fn get_body(url: &str) -> Result<String> {
     let response = reqwest::get(url).await?;
-    Ok(Response {
-        status: response.status().into(),
-        body: response.text().await?,
-    })
+    if response.status().is_success() {
+        Ok(response.text().await?)
+    } else {
+        Err(Error::HttpError(format!(
+            "get returns non-200 status: {}",
+            response.status()
+        )))
+    }
+}
+
+pub async fn get_body_v4(url: &str) -> Result<String> {
+    do_get_body(url, Some(IpAddr::V4(Ipv4Addr::new(0, 0, 0, 0)))).await
+}
+
+pub async fn get_body_v6(url: &str) -> Result<String> {
+    do_get_body(url, Some(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 0)))).await
+}
+
+pub async fn do_get_body(url: &str, addr: Option<std::net::IpAddr>) -> Result<String> {
+    let response = reqwest::Client::builder()
+        .local_address(addr)
+        .build()?
+        .get(url)
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        Ok(response.text().await?)
+    } else {
+        Err(Error::HttpError(format!(
+            "get returns non-200 status: {}",
+            response.status()
+        )))
+    }
 }
