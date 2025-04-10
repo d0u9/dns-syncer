@@ -28,6 +28,51 @@ async fn main() {
     let args = Args::parse();
 
     let config = config::Parser::parse_yaml(&args.config).unwrap();
+    let mut runner = init_runner(config).unwrap();
+    runner.run().await.unwrap();
+
+    exit(1);
+
+    // println!("config: {:?}", records);
+    // // The key is the provider name, value is the backend records per zone
+    // let record_per_provider = to_backend_records(records).unwrap();
+    // //dbg!(&record_per_provider);
+
+    // let providers = providers
+    //     .into_iter()
+    //     .filter_map(|p| {
+    //         if record_per_provider.contains_key(&p.name) {
+    //             Some((p.name.clone(), instance_provider(p).unwrap()))
+    //         } else {
+    //             None
+    //         }
+    //     })
+    //     .collect::<HashMap<_, _>>();
+
+    // dbg!(
+    //     &providers
+    //         .iter()
+    //         .map(|(name, _)| name.clone())
+    //         .collect::<Vec<_>>()
+    // );
+
+    // let global_records_clone = global_records.clone();
+    // for (provider_name, records) in record_per_provider.iter() {
+    //     println!("provider_name: {}", provider_name);
+    //     let provider = providers.get(provider_name).unwrap();
+    //     provider
+    //         .sync(records.clone(), global_records_clone.clone().into())
+    //         .await
+    //         .unwrap();
+    // }
+}
+
+struct Runner {
+    global_fetcher_name: String,
+    fetchers: FetcherMap,
+}
+
+fn init_runner(config: config::Cfg) -> Result<Runner> {
     let config::Cfg {
         check_interval: _,
         providers,
@@ -37,46 +82,24 @@ async fn main() {
     } = config;
 
     let fetchers = create_fetchers(&records, &public_ip_fecher, &fetchers).unwrap();
-    fetchers.iter().for_each(|(name, fetcher)| {
-        println!("fetcher: {}", name);
-    });
-    let global_fetcher = fetchers.get(&public_ip_fecher).unwrap();
 
-    let global_records = global_fetcher.fetch().await.unwrap();
-    println!("fetched records: {:?}", global_records);
-    exit(1);
+    Ok(Runner {
+        global_fetcher_name: public_ip_fecher.to_string(),
+        fetchers,
+    })
+}
 
-    println!("config: {:?}", records);
-    // The key is the provider name, value is the backend records per zone
-    let record_per_provider = to_backend_records(records).unwrap();
-    //dbg!(&record_per_provider);
-
-    let providers = providers
-        .into_iter()
-        .filter_map(|p| {
-            if record_per_provider.contains_key(&p.name) {
-                Some((p.name.clone(), instance_provider(p).unwrap()))
-            } else {
-                None
-            }
-        })
-        .collect::<HashMap<_, _>>();
-
-    dbg!(
-        &providers
-            .iter()
-            .map(|(name, _)| name.clone())
-            .collect::<Vec<_>>()
-    );
-
-    let global_records_clone = global_records.clone();
-    for (provider_name, records) in record_per_provider.iter() {
-        println!("provider_name: {}", provider_name);
-        let provider = providers.get(provider_name).unwrap();
-        provider
-            .sync(records.clone(), global_records_clone.clone().into())
+impl Runner {
+    async fn run(&mut self) -> Result<()> {
+        let global_records = self
+            .fetchers
+            .get_mut(&self.global_fetcher_name)
+            .unwrap()
+            .fetch()
             .await
             .unwrap();
+        println!("fetched records: {:?}", global_records);
+        Ok(())
     }
 }
 

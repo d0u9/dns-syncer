@@ -2,7 +2,7 @@ use super::*;
 use std::net::Ipv4Addr;
 
 use dns_syncer::provider::Auth;
-use dns_syncer::record::RecordType;
+use dns_syncer::types::RecordType;
 
 #[test]
 fn test_record_deserialize_with_content() {

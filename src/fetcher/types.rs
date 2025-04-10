@@ -5,5 +5,5 @@ use async_trait::async_trait;
 
 #[async_trait]
 pub trait Fetcher {
-    async fn fetch(&self) -> Result<FetcherRecordSet>;
+    async fn fetch(&mut self) -> Result<FetcherRecordSet>;
 }

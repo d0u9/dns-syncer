@@ -1,3 +1,6 @@
+use std::time::Duration;
+use std::time::Instant;
+
 use async_trait::async_trait;
 
 use crate::error::{Error, Result};
@@ -15,15 +18,21 @@ enum FetcherBackend {
     Ipw,
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct HttpFetcher {
     backends: Vec<FetcherBackend>,
+    last_fetch_time: Instant,
+    cache_alive_time: Duration,
+    cache: Option<FetcherRecordSet>,
 }
 
 impl HttpFetcher {
     pub fn new() -> Self {
         Self {
             backends: vec![FetcherBackend::Cloudflare, FetcherBackend::Ipw],
+            cache_alive_time: Duration::from_secs(30),
+            cache: None,
+            last_fetch_time: Instant::now(),
         }
     }
 
@@ -32,35 +41,23 @@ impl HttpFetcher {
             return Self::new();
         }
 
-        let enabled_backends = args
-            .iter()
-            .filter_map(|param| {
-                if param.name == "enabled" {
-                    Some(param.value.split(',').collect::<Vec<&str>>())
-                } else {
-                    None
-                }
-            })
-            .next()
-            .unwrap_or_else(|| Self::default_backends());
+        let mut enabled_backends: Vec<&str> = vec![];
+        let mut cache_alive_time: Duration = Duration::default();
 
-        let mut backends = Vec::new();
-        for backend in enabled_backends {
-            match backend {
-                "cloudflare" => backends.push(FetcherBackend::Cloudflare),
-                "ipw" => backends.push(FetcherBackend::Ipw),
-                _ => continue,
+        args.iter().rev().for_each(|param| {
+            if param.name == "enabled" {
+                enabled_backends = param.value.split(',').collect::<Vec<&str>>();
+            } else if param.name == "cache_alive_time" {
+                cache_alive_time = Duration::from_secs(param.value.parse::<u64>().unwrap());
             }
-        }
+        });
 
-        if backends.is_empty() {
-            log::warn!(
-                "no enabled backends, use default backends: {:?}",
-                Self::default_backends()
-            );
-            Self::new()
-        } else {
-            Self { backends }
+        let backends = Self::backends_from_types(enabled_backends);
+        Self {
+            backends,
+            cache_alive_time,
+            cache: None,
+            last_fetch_time: Instant::now(),
         }
     }
 
@@ -68,7 +65,28 @@ impl HttpFetcher {
         vec!["cloudflare", "ipw"]
     }
 
-    pub async fn fetch(&self) -> Result<FetcherRecordSet> {
+    fn backends_from_types(backend_types: Vec<&str>) -> Vec<FetcherBackend> {
+        let ret: Vec<FetcherBackend> = backend_types
+            .iter()
+            .map(|backend_type| match *backend_type {
+                "cloudflare" => FetcherBackend::Cloudflare,
+                "ipw" => FetcherBackend::Ipw,
+                _ => panic!("unknown http fetcher backend type: {}", backend_type),
+            })
+            .collect();
+
+        if ret.is_empty() {
+            log::warn!(
+                "no enabled backends, use default backends: {:?}",
+                Self::default_backends()
+            );
+            vec![FetcherBackend::Cloudflare, FetcherBackend::Ipw]
+        } else {
+            ret
+        }
+    }
+
+    async fn do_fetch_from_backends(&self) -> Result<FetcherRecordSet> {
         let mut ret = FetcherRecordSet::default();
         for backend in self.backends.iter() {
             match backend {
@@ -84,12 +102,21 @@ impl HttpFetcher {
         }
         Ok(ret)
     }
+
+    async fn do_fetch(&mut self) -> Result<FetcherRecordSet> {
+        if self.cache.is_none() || self.last_fetch_time.elapsed() > self.cache_alive_time {
+            let records = self.do_fetch_from_backends().await?;
+            self.cache = Some(records);
+            self.last_fetch_time = Instant::now();
+        }
+        Ok(self.cache.clone().unwrap())
+    }
 }
 
 #[async_trait]
 impl Fetcher for HttpFetcher {
-    async fn fetch(&self) -> Result<FetcherRecordSet> {
-        self.fetch().await
+    async fn fetch(&mut self) -> Result<FetcherRecordSet> {
+        self.do_fetch().await
     }
 }
 
@@ -122,7 +149,7 @@ mod http_fetcher_tests {
 
     #[tokio::test]
     async fn test_fetcher() {
-        let fetcher = HttpFetcher::new();
+        let mut fetcher = HttpFetcher::new();
         let records = fetcher.fetch().await.unwrap();
         dbg!(&records);
     }
