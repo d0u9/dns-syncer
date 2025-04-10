@@ -1,6 +1,6 @@
 use serde::{Serialize, ser::SerializeStruct};
 
-use crate::record::RecordContent;
+use crate::types::RecordContent;
 
 impl Serialize for RecordContent {
     fn serialize<S>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error>
@@ -39,7 +39,7 @@ impl Serialize for RecordContent {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::record::RecordType;
+    use crate::types::RecordType;
     use std::net::Ipv4Addr;
 
     #[test]

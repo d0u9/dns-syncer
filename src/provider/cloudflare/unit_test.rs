@@ -1,12 +1,12 @@
 use std::net::Ipv4Addr;
 
 use super::cloudflare::*;
-use crate::record::ProviderParam;
-use crate::record::ProviderRecord;
-use crate::record::RecordContent;
-use crate::record::RecordOp;
-use crate::record::RecordType;
-use crate::record::TTL;
+use crate::types::ProviderParam;
+use crate::types::ProviderRecord;
+use crate::types::RecordContent;
+use crate::types::RecordOp;
+use crate::types::RecordType;
+use crate::types::TTL;
 
 #[tokio::test]
 async fn test_cf_record_op_purge() {

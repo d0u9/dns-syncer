@@ -7,12 +7,12 @@ use serde::Deserialize;
 use dns_syncer::error::Error;
 use dns_syncer::error::Result;
 use dns_syncer::provider::Auth;
-use dns_syncer::record::ProviderParam;
-use dns_syncer::record::ProviderRecord;
-use dns_syncer::record::RecordContent;
-use dns_syncer::record::RecordOp;
-use dns_syncer::record::TTL;
-use dns_syncer::record::ZoneName;
+use dns_syncer::types::ProviderParam;
+use dns_syncer::types::ProviderRecord;
+use dns_syncer::types::RecordContent;
+use dns_syncer::types::RecordOp;
+use dns_syncer::types::TTL;
+use dns_syncer::types::ZoneName;
 
 ////////////////////////////////////////////////////////////
 // Parameters
@@ -21,6 +21,12 @@ use dns_syncer::record::ZoneName;
 pub struct CfgParam {
     pub name: String,
     pub value: String,
+}
+
+impl From<CfgParam> for dns_syncer::types::Param {
+    fn from(cfg_param: CfgParam) -> Self {
+        dns_syncer::types::Param::new(cfg_param.name, cfg_param.value)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -33,6 +39,12 @@ impl CfgParamList {
 
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+}
+
+impl From<CfgParamList> for Vec<dns_syncer::types::Param> {
+    fn from(cfg_param_list: CfgParamList) -> Self {
+        cfg_param_list.0.into_iter().map(|p| p.into()).collect()
     }
 }
 
@@ -121,6 +133,7 @@ pub struct CfgRecordFetcher {
 pub struct CfgRecordProvider {
     pub name: String,
     pub zones: Vec<ZoneName>,
+    #[serde(default)]
     pub params: CfgParamList,
 }
 
@@ -203,6 +216,7 @@ pub struct Cfg {
     pub fetchers: Vec<CfgFetcher>,
     pub providers: Vec<CfgProvider>,
     pub records: Vec<CfgRecordItem>,
+    pub public_ip_fecher: String,
 }
 
 pub struct Parser;

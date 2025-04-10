@@ -6,11 +6,11 @@ use crate::error::Result;
 use crate::provider::BackendRecords;
 use crate::provider::Provider;
 use crate::provider::ZoneRecords;
-use crate::record::ProviderRecord;
-use crate::record::PublicIp;
-use crate::record::RecordContent;
-use crate::record::RecordOp;
-use crate::record::TTL;
+use crate::types::ProviderRecord;
+use crate::types::PublicIp;
+use crate::types::RecordContent;
+use crate::types::RecordOp;
+use crate::types::TTL;
 use crate::wrapper::http;
 
 #[derive(Debug, Clone, Deserialize)]

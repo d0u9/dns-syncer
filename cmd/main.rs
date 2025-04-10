@@ -1,17 +1,21 @@
 use std::collections::HashMap;
+use std::process::exit;
 
 use clap::Parser;
 use tokio;
 
 use dns_syncer::error::Error;
 use dns_syncer::error::Result;
+use dns_syncer::fetcher::Fetcher;
 use dns_syncer::fetcher::HttpFetcher;
 use dns_syncer::provider::BackendRecords;
 use dns_syncer::provider::Cloudflare;
 use dns_syncer::provider::Provider;
-use dns_syncer::record::ZoneName;
+use dns_syncer::types::ZoneName;
 
 mod config;
+
+type FetcherMap = HashMap<String, Box<dyn Fetcher>>;
 
 #[derive(Parser)]
 struct Args {
@@ -27,13 +31,20 @@ async fn main() {
     let config::Cfg {
         check_interval: _,
         providers,
-        fetchers: _,
+        fetchers,
         records,
+        public_ip_fecher,
     } = config;
 
-    let global_fetcher = HttpFetcher::default();
+    let fetchers = create_fetchers(&records, &public_ip_fecher, &fetchers).unwrap();
+    fetchers.iter().for_each(|(name, fetcher)| {
+        println!("fetcher: {}", name);
+    });
+    let global_fetcher = fetchers.get(&public_ip_fecher).unwrap();
+
     let global_records = global_fetcher.fetch().await.unwrap();
     println!("fetched records: {:?}", global_records);
+    exit(1);
 
     println!("config: {:?}", records);
     // The key is the provider name, value is the backend records per zone
@@ -67,6 +78,41 @@ async fn main() {
             .await
             .unwrap();
     }
+}
+
+fn list_in_use_fethers(
+    records: &Vec<config::CfgRecordItem>,
+    public_ip_fecher: &str,
+) -> Vec<String> {
+    let mut ret = records
+        .iter()
+        .flat_map(|r| r.fetchers.iter().map(|f| f.name.clone()))
+        .collect::<Vec<_>>();
+    ret.push(public_ip_fecher.to_string());
+    ret.sort();
+    ret.dedup();
+    ret
+}
+
+fn create_fetchers(
+    records: &Vec<config::CfgRecordItem>,
+    public_ip_fecher: &str,
+    fetchers: &Vec<config::CfgFetcher>,
+) -> Result<FetcherMap> {
+    let in_use_fetchers = list_in_use_fethers(records, public_ip_fecher);
+
+    let ret = fetchers
+        .into_iter()
+        .filter(|f| in_use_fetchers.contains(&f.name))
+        .filter_map(|f| match f.r#type.as_str() {
+            "http_fetcher" => Some((
+                f.name.clone(),
+                Box::new(HttpFetcher::new_with_args(f.params.clone().into())) as Box<dyn Fetcher>,
+            )),
+            _ => None,
+        })
+        .collect::<HashMap<_, _>>();
+    Ok(ret)
 }
 
 fn instance_provider(provider: config::CfgProvider) -> Result<Box<dyn Provider>> {

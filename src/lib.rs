@@ -3,6 +3,6 @@ pub use error::*;
 
 pub mod fetcher;
 pub mod provider;
-pub mod record;
+pub mod types;
 
 mod wrapper;

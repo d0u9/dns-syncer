@@ -4,9 +4,10 @@ use crate::error::{Error, Result};
 use crate::wrapper::http;
 
 use super::Fetcher;
-use crate::record::FetcherRecord;
-use crate::record::FetcherRecordSet;
-use crate::record::RecordLabel;
+use crate::types::FetcherRecord;
+use crate::types::FetcherRecordSet;
+use crate::types::Param;
+use crate::types::RecordLabel;
 
 #[derive(Clone)]
 enum FetcherBackend {
@@ -26,16 +27,16 @@ impl HttpFetcher {
         }
     }
 
-    pub fn new_with_args(args: Vec<(String, String)>) -> Self {
+    pub fn new_with_args(args: Vec<Param>) -> Self {
         if args.is_empty() {
             return Self::new();
         }
 
         let enabled_backends = args
             .iter()
-            .filter_map(|(key, val)| {
-                if key == "enabled" {
-                    Some(val.split(',').collect::<Vec<&str>>())
+            .filter_map(|param| {
+                if param.name == "enabled" {
+                    Some(param.value.split(',').collect::<Vec<&str>>())
                 } else {
                     None
                 }

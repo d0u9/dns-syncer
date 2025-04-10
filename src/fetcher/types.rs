@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::record::FetcherRecordSet;
+use crate::types::FetcherRecordSet;
 
 use async_trait::async_trait;
 
