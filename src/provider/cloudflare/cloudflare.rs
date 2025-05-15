@@ -24,14 +24,12 @@ pub enum Auth {
 }
 
 pub struct Cloudflare {
-    name: String,
     cli: Cli,
 }
 
 impl Cloudflare {
-    pub fn new(name: String, authentication: Auth) -> Self {
+    pub fn new(authentication: Auth) -> Self {
         Self {
-            name,
             cli: Cli::new(authentication),
         }
     }
@@ -85,10 +83,6 @@ impl Provider for Cloudflare {
             self.sync_zone(&zone, zone_records, &public_ip).await?;
         }
         Ok(())
-    }
-
-    fn name(&self) -> &str {
-        &self.name
     }
 }
 

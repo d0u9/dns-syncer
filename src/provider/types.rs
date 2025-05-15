@@ -9,7 +9,6 @@ use crate::types::ZoneName;
 
 #[async_trait]
 pub trait Provider {
-    fn name(&self) -> &str;
     async fn sync(&self, records: BackendRecords, public_ip: PublicIp) -> Result<()>;
 }
 

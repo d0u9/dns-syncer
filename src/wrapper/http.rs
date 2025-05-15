@@ -115,6 +115,7 @@ impl Client {
     }
 }
 
+#[allow(dead_code)]
 pub async fn get_body(url: &str) -> Result<String> {
     let response = reqwest::get(url).await?;
     if response.status().is_success() {

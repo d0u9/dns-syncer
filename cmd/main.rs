@@ -4,18 +4,19 @@ use std::process::exit;
 use clap::Parser;
 use tokio;
 
-use dns_syncer::error::Error;
 use dns_syncer::error::Result;
 use dns_syncer::fetcher::Fetcher;
 use dns_syncer::fetcher::HttpFetcher;
 use dns_syncer::provider::BackendRecords;
 use dns_syncer::provider::Cloudflare;
 use dns_syncer::provider::Provider;
+use dns_syncer::types::FetcherRecordSet;
 use dns_syncer::types::ZoneName;
 
 mod config;
 
 type FetcherMap = HashMap<String, Box<dyn Fetcher>>;
+type ProviderMap = HashMap<String, Box<dyn Provider>>;
 
 #[derive(Parser)]
 struct Args {
@@ -33,7 +34,6 @@ async fn main() {
 
     exit(1);
 
-    // println!("config: {:?}", records);
     // // The key is the provider name, value is the backend records per zone
     // let record_per_provider = to_backend_records(records).unwrap();
     // //dbg!(&record_per_provider);
@@ -67,9 +67,17 @@ async fn main() {
     // }
 }
 
+#[derive(Debug, Clone, Default)]
+struct ProviderBackend {
+    record: BackendRecords,
+    fetchers: Vec<String>,
+}
+
 struct Runner {
     global_fetcher_name: String,
     fetchers: FetcherMap,
+    providers: ProviderMap,
+    record_per_provider: HashMap<String, ProviderBackend>,
 }
 
 fn init_runner(config: config::Cfg) -> Result<Runner> {
@@ -82,25 +90,76 @@ fn init_runner(config: config::Cfg) -> Result<Runner> {
     } = config;
 
     let fetchers = create_fetchers(&records, &public_ip_fecher, &fetchers).unwrap();
+    let providers = create_providers(&records, &providers).unwrap();
+
+    // The key is the provider name, value is the backend records per zone
+    let record_per_provider = to_provider_backends(records).unwrap();
 
     Ok(Runner {
         global_fetcher_name: public_ip_fecher.to_string(),
         fetchers,
+        providers,
+        record_per_provider,
     })
 }
 
 impl Runner {
     async fn run(&mut self) -> Result<()> {
-        let global_records = self
-            .fetchers
-            .get_mut(&self.global_fetcher_name)
-            .unwrap()
-            .fetch()
-            .await
-            .unwrap();
-        println!("fetched records: {:?}", global_records);
+        let public_ip = self.fetch_public_ip().await?;
+
+        for (provider_name, backend) in self.record_per_provider.iter() {
+            let provider = self.providers.get_mut(provider_name).unwrap();
+            provider
+                .sync(backend.record.clone(), public_ip.clone().into())
+                .await?;
+        }
+
         Ok(())
     }
+
+    async fn fetch_public_ip(&mut self) -> Result<FetcherRecordSet> {
+        let fetcher = self.fetchers.get_mut(&self.global_fetcher_name).unwrap();
+        fetcher.fetch().await
+    }
+}
+
+fn list_in_use_providers(records: &Vec<config::CfgRecordItem>) -> Vec<String> {
+    let mut ret = records
+        .iter()
+        .flat_map(|r| r.providers.iter().map(|p| p.name.clone()))
+        .collect::<Vec<_>>();
+    ret.sort();
+    ret.dedup();
+    ret
+}
+
+fn create_providers(
+    records: &Vec<config::CfgRecordItem>,
+    providers: &Vec<config::CfgProvider>,
+) -> Result<ProviderMap> {
+    let in_use_providers = list_in_use_providers(records);
+
+    let ret = providers
+        .into_iter()
+        .filter(|f| in_use_providers.contains(&f.name))
+        .filter_map(|provider| {
+            match provider.r#type.as_str() {
+                // Create new Cloudflare provider if authentication is valid
+                "cloudflare" => {
+                    let auth = provider.authentication.clone().try_into().ok()?;
+                    let cloudflare = Cloudflare::new(auth);
+
+                    Some((
+                        provider.name.clone(),
+                        Box::new(cloudflare) as Box<dyn Provider>,
+                    ))
+                }
+                // Skip unknown provider types
+                _ => None,
+            }
+        })
+        .collect::<HashMap<_, _>>();
+    Ok(ret)
 }
 
 fn list_in_use_fethers(
@@ -127,32 +186,29 @@ fn create_fetchers(
     let ret = fetchers
         .into_iter()
         .filter(|f| in_use_fetchers.contains(&f.name))
-        .filter_map(|f| match f.r#type.as_str() {
-            "http_fetcher" => Some((
-                f.name.clone(),
-                Box::new(HttpFetcher::new_with_args(f.params.clone().into())) as Box<dyn Fetcher>,
-            )),
-            _ => None,
+        .filter_map(|fetcher| {
+            // Create appropriate fetcher based on type
+            match fetcher.r#type.as_str() {
+                // For HTTP fetchers, create new instance with params
+                "http_fetcher" => {
+                    let http_fetcher = HttpFetcher::new_with_args(fetcher.params.clone().into());
+                    Some((
+                        fetcher.name.clone(),
+                        Box::new(http_fetcher) as Box<dyn Fetcher>,
+                    ))
+                }
+                // Skip any unknown fetcher types
+                _ => None,
+            }
         })
         .collect::<HashMap<_, _>>();
     Ok(ret)
 }
 
-fn instance_provider(provider: config::CfgProvider) -> Result<Box<dyn Provider>> {
-    let provider = match provider.r#type.as_str() {
-        "cloudflare" => Box::new(Cloudflare::new(
-            provider.name,
-            provider.authentication.try_into()?,
-        )),
-        _ => return Err(Error::Provider(provider.r#type)),
-    };
-    Ok(provider)
-}
-
-fn to_backend_records(
+fn to_provider_backends(
     cfg_records: Vec<config::CfgRecordItem>,
-) -> Result<HashMap<String, BackendRecords>> {
-    let mut ret: HashMap<String, BackendRecords> = HashMap::new();
+) -> Result<HashMap<String, ProviderBackend>> {
+    let mut ret: HashMap<String, ProviderBackend> = HashMap::new();
 
     for item in cfg_records {
         process_record_item(&mut ret, item);
@@ -161,7 +217,7 @@ fn to_backend_records(
 }
 
 fn process_record_item(
-    records_map: &mut HashMap<String, BackendRecords>,
+    records_map: &mut HashMap<String, ProviderBackend>,
     item: config::CfgRecordItem,
 ) {
     for provider in item.providers {
@@ -170,7 +226,7 @@ fn process_record_item(
 }
 
 fn process_provider(
-    records_map: &mut HashMap<String, BackendRecords>,
+    records_map: &mut HashMap<String, ProviderBackend>,
     record: &config::CfgRecord,
     provider: config::CfgRecordProvider,
 ) {
@@ -180,7 +236,7 @@ fn process_provider(
         .or_insert(Default::default());
 
     for zone in provider.zones {
-        add_zone_record(backend_records, zone, record, &provider.params);
+        add_zone_record(&mut backend_records.record, zone, record, &provider.params);
     }
 }
 
